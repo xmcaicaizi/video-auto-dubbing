@@ -41,8 +41,8 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
-          # 只在目录和 go.sum 存在时启用 cache
-          cache-dependency-path: ${{ matrix.path }}/go.sum
+          # 不设置 cache-dependency-path，避免在 go.sum 不存在时报错
+          # Go 会自动检测并缓存依赖
       
       - name: Install goimports
         if: steps.check_dir.outputs.exists == 'true'

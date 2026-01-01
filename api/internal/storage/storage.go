@@ -71,8 +71,11 @@ func (s *Service) DeleteObject(ctx context.Context, key string) error {
 }
 
 // PresignedGetURL generates a presigned URL for getting an object.
+// Uses the public client to generate browser-accessible URLs.
 func (s *Service) PresignedGetURL(ctx context.Context, key string, expiry int) (string, error) {
-	url, err := s.client.PresignedGetObject(
+	// Use public client for presigned URLs (browser-accessible)
+	publicClient := s.client.PublicClient()
+	url, err := publicClient.PresignedGetObject(
 		ctx,
 		s.bucket,
 		key,

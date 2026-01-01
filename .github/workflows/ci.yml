@@ -12,6 +12,7 @@ jobs:
     name: Go Lint & Test
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false  # 即使一个失败也继续运行其他的
       matrix:
         service: [api, worker]
         include:
@@ -27,12 +28,12 @@ jobs:
       - name: Check if directory exists
         id: check_dir
         run: |
-          if [ -d "${{ matrix.path }}" ]; then
+          if [ -d "${{ matrix.path }}" ] && [ -f "${{ matrix.path }}/go.mod" ]; then
             echo "exists=true" >> $GITHUB_OUTPUT
-            echo "✅ ${{ matrix.path }}/ 目录存在"
+            echo "✅ ${{ matrix.path }}/ 目录存在且包含 go.mod"
           else
             echo "exists=false" >> $GITHUB_OUTPUT
-            echo "ℹ️  ${{ matrix.path }}/ 目录不存在，跳过检查"
+            echo "ℹ️  ${{ matrix.path }}/ 目录不存在或没有 go.mod，跳过检查"
           fi
       
       - name: Set up Go
@@ -40,13 +41,8 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
+          # 只在目录和 go.sum 存在时启用 cache
           cache-dependency-path: ${{ matrix.path }}/go.sum
-      
-      - name: Install dependencies
-        if: steps.check_dir.outputs.exists == 'true'
-        run: |
-          cd ${{ matrix.path }}
-          go mod download
       
       - name: Install goimports
         if: steps.check_dir.outputs.exists == 'true'
@@ -58,6 +54,12 @@ jobs:
         with:
           version: v1.55.2
           working-directory: ${{ matrix.path }}
+      
+      - name: Install dependencies
+        if: steps.check_dir.outputs.exists == 'true'
+        run: |
+          cd ${{ matrix.path }}
+          go mod download
       
       - name: Check formatting
         if: steps.check_dir.outputs.exists == 'true'
@@ -96,10 +98,11 @@ jobs:
           file: ./${{ matrix.path }}/coverage.out
           flags: ${{ matrix.service }}
           name: ${{ matrix.service }}-coverage
+          fail_ci_if_error: false
       
       - name: Skip message
         if: steps.check_dir.outputs.exists == 'false'
-        run: echo "ℹ️  跳过 ${{ matrix.service }} 检查（目录不存在）"
+        run: echo "ℹ️  跳过 ${{ matrix.service }} 检查（目录不存在或没有 go.mod）"
 
   # Python 代码检查
   python:
@@ -113,12 +116,12 @@ jobs:
       - name: Check if directory exists
         id: check_dir
         run: |
-          if [ -d "tts_service" ]; then
+          if [ -d "tts_service" ] && [ -f "tts_service/pyproject.toml" ]; then
             echo "exists=true" >> $GITHUB_OUTPUT
-            echo "✅ tts_service/ 目录存在"
+            echo "✅ tts_service/ 目录存在且包含 pyproject.toml"
           else
             echo "exists=false" >> $GITHUB_OUTPUT
-            echo "ℹ️  tts_service/ 目录不存在，跳过检查"
+            echo "ℹ️  tts_service/ 目录不存在或没有 pyproject.toml，跳过检查"
           fi
       
       - name: Install uv
@@ -137,40 +140,61 @@ jobs:
         if: steps.check_dir.outputs.exists == 'true'
         working-directory: tts_service
         run: |
-          uv sync --frozen || echo "⚠️  依赖安装失败，可能缺少 uv.lock 文件"
+          # 如果 uv.lock 不存在，使用 sync 而不是 sync --frozen
+          if [ -f "uv.lock" ]; then
+            echo "使用 uv.lock 安装依赖..."
+            uv sync --frozen
+          else
+            echo "uv.lock 不存在，使用 uv sync..."
+            uv sync
+          fi
       
       - name: Check formatting (black)
         if: steps.check_dir.outputs.exists == 'true'
         working-directory: tts_service
         run: |
           # 检查是否有 Python 文件
-          if [ -z "$(find . -name '*.py' -type f)" ]; then
+          py_files=$(find . -name '*.py' -type f -not -path '*/\.*' | head -1)
+          if [ -z "$py_files" ]; then
             echo "ℹ️  未找到 Python 文件，跳过格式化检查"
             exit 0
           fi
-          uv run black --check . || echo "⚠️  格式化检查失败（可能缺少代码文件）"
+          uv run black --check . || {
+            echo "⚠️  格式化检查失败，请运行: uv run black ."
+            exit 1
+          }
+          echo "✅ Python 代码格式检查通过"
       
       - name: Run ruff
         if: steps.check_dir.outputs.exists == 'true'
         working-directory: tts_service
         run: |
           # 检查是否有 Python 文件
-          if [ -z "$(find . -name '*.py' -type f)" ]; then
+          py_files=$(find . -name '*.py' -type f -not -path '*/\.*' | head -1)
+          if [ -z "$py_files" ]; then
             echo "ℹ️  未找到 Python 文件，跳过 ruff 检查"
             exit 0
           fi
-          uv run ruff check . || echo "⚠️  ruff 检查失败（可能缺少代码文件）"
+          uv run ruff check . || {
+            echo "⚠️  ruff 检查失败"
+            exit 1
+          }
+          echo "✅ ruff 检查通过"
       
       - name: Run tests
         if: steps.check_dir.outputs.exists == 'true'
         working-directory: tts_service
         run: |
           # 检查是否有测试文件
-          if [ -z "$(find . -name 'test_*.py' -o -name '*_test.py' -type f)" ]; then
+          test_files=$(find . -name 'test_*.py' -o -name '*_test.py' -type f | head -1)
+          if [ -z "$test_files" ]; then
             echo "ℹ️  未找到测试文件，跳过测试"
             exit 0
           fi
-          uv run pytest -v --cov=app --cov-report=xml || echo "⚠️  测试失败或没有测试"
+          uv run pytest -v --cov=app --cov-report=xml || {
+            echo "⚠️  测试失败"
+            exit 1
+          }
       
       - name: Upload coverage
         if: steps.check_dir.outputs.exists == 'true'
@@ -183,7 +207,7 @@ jobs:
       
       - name: Skip message
         if: steps.check_dir.outputs.exists == 'false'
-        run: echo "ℹ️  跳过 Python 检查（目录不存在）"
+        run: echo "ℹ️  跳过 Python 检查（目录不存在或没有 pyproject.toml）"
 
   # Shell 脚本检查
   shell:
@@ -193,6 +217,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      
+      - name: Install Go (for shfmt)
+        run: |
+          # 安装 Go 用于 shfmt
+          wget -q -O - https://go.dev/dl/go1.21.0.linux-amd64.tar.gz | sudo tar -xz -C /usr/local
+          echo "/usr/local/go/bin" >> $GITHUB_PATH
       
       - name: Install shfmt
         run: |
@@ -207,39 +237,51 @@ jobs:
       - name: Check formatting (shfmt)
         run: |
           # 查找所有 .sh 文件
-          sh_files=$(find . -name "*.sh" -type f -not -path "*/\.*" -not -path "*/node_modules/*")
+          sh_files=$(find . -name "*.sh" -type f -not -path "*/\.*" -not -path "*/node_modules/*" 2>/dev/null || true)
           if [ -z "$sh_files" ]; then
-            echo "ℹ️  未找到 Shell 脚本文件"
+            echo "ℹ️  未找到 Shell 脚本文件，跳过格式化检查"
             exit 0
           fi
           
           # 检查格式
+          failed=0
           for file in $sh_files; do
             echo "检查 $file..."
-            if ! shfmt -d "$file"; then
+            if ! shfmt -d "$file" > /dev/null 2>&1; then
               echo "❌ $file 格式不正确，请运行: shfmt -w $file"
-              exit 1
+              shfmt -d "$file" | head -20
+              failed=1
             fi
           done
+          
+          if [ $failed -eq 1 ]; then
+            exit 1
+          fi
           echo "✅ Shell 脚本格式检查通过"
       
       - name: Run shellcheck
         run: |
           # 查找所有 .sh 文件
-          sh_files=$(find . -name "*.sh" -type f -not -path "*/\.*" -not -path "*/node_modules/*")
+          sh_files=$(find . -name "*.sh" -type f -not -path "*/\.*" -not -path "*/node_modules/*" 2>/dev/null || true)
           if [ -z "$sh_files" ]; then
-            echo "ℹ️  未找到 Shell 脚本文件"
+            echo "ℹ️  未找到 Shell 脚本文件，跳过 shellcheck"
             exit 0
           fi
           
           # 运行 shellcheck
+          failed=0
           for file in $sh_files; do
             echo "检查 $file..."
-            shellcheck "$file" || exit 1
+            shellcheck "$file" || failed=1
           done
+          
+          if [ $failed -eq 1 ]; then
+            echo "❌ Shell 脚本检查失败"
+            exit 1
+          fi
           echo "✅ Shell 脚本检查通过"
 
-  # Markdown 检查（可选）
+  # Markdown 检查（可选，使用 npm 版本）
   markdown:
     name: Markdown Lint
     runs-on: ubuntu-latest
@@ -249,15 +291,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install markdownlint-cli
+        run: npm install -g markdownlint-cli
+      
       - name: Run markdownlint
         continue-on-error: true
-        uses: DavidAnson/markdownlint-action@v3
-        with:
-          globs: '**/*.md'
-          configFile: .markdownlint.json
-      
-      - name: Markdown check completed
-        run: echo "ℹ️  Markdown 检查完成（可选，不影响 CI）"
+        run: |
+          if [ -f ".markdownlint.json" ]; then
+            markdownlint "**/*.md" --config .markdownlint.json || true
+          else
+            markdownlint "**/*.md" || true
+          fi
+          echo "ℹ️  Markdown 检查完成（可选，不影响 CI）"
 
   # 综合检查（确保所有作业通过）
   all-checks:
@@ -269,9 +319,18 @@ jobs:
     steps:
       - name: Check job results
         run: |
-          if [ "${{ needs.go.result }}" == "failure" ] || [ "${{ needs.python.result }}" == "failure" ] || [ "${{ needs.shell.result }}" == "failure" ]; then
+          go_result="${{ needs.go.result }}"
+          python_result="${{ needs.python.result }}"
+          shell_result="${{ needs.shell.result }}"
+          
+          echo "Go 检查结果: $go_result"
+          echo "Python 检查结果: $python_result"
+          echo "Shell 检查结果: $shell_result"
+          
+          # 如果任何必需检查失败，CI 失败
+          if [ "$go_result" == "failure" ] || [ "$python_result" == "failure" ] || [ "$shell_result" == "failure" ]; then
             echo "❌ 部分检查失败，请查看上方日志"
             exit 1
           fi
+          
           echo "✅ 所有必需检查通过！"
-

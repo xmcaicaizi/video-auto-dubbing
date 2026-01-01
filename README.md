@@ -99,7 +99,15 @@ vedio/
 │   ├── api-contracts.md   # API 接口规范
 │   ├── queue-messages.md  # 队列消息规范
 │   ├── tts-service.md     # TTS 服务规范
+│   ├── coding-standards.md # 代码规范
+│   ├── code-review.md     # 代码审查规范
+│   ├── commit-message.md  # 提交信息规范
 │   └── deployment.md      # 部署指南
+├── .github/workflows/     # GitHub Actions CI 配置
+├── Makefile              # 统一开发命令入口
+├── .golangci.yml         # Go 静态检查配置
+├── .editorconfig         # 编辑器配置
+└── CONTRIBUTING.md       # 贡献指南
 ├── docker-compose.yml     # Docker Compose 配置
 ├── .env.example           # 环境变量示例
 └── README.md             # 本文件
@@ -152,6 +160,36 @@ docker compose up -d --scale worker=3
 
 ## 开发指南
 
+### 代码规范
+
+本项目遵循 Google Style Guides 和 Engineering Practices 的最佳实践：
+
+- 📖 [代码规范](docs/coding-standards.md) - Go/Python/Shell 编码规范
+- 🔍 [代码审查规范](docs/code-review.md) - 代码审查流程和检查清单
+- 💬 [提交信息规范](docs/commit-message.md) - Git 提交信息格式要求
+- 🤝 [贡献指南](CONTRIBUTING.md) - 完整的开发工作流和贡献流程
+
+### 代码检查
+
+提交代码前，**必须**运行以下检查：
+
+```bash
+# 使用 Makefile（推荐）
+make format    # 格式化所有代码
+make lint      # 运行所有静态检查
+make test      # 运行所有测试
+make ci        # 运行完整 CI 检查（format + lint + test）
+
+# 查看所有可用命令
+make help
+```
+
+**CI 状态：** 所有代码提交都会通过 [GitHub Actions](.github/workflows/ci.yml) 自动检查，包括：
+- ✅ Go 代码格式化和静态检查（gofmt, goimports, golangci-lint）
+- ✅ Python 代码格式化和静态检查（black, ruff）
+- ✅ Shell 脚本检查（shfmt, shellcheck）
+- ✅ 所有测试必须通过
+
 ### Go 服务开发
 
 ```bash
@@ -172,6 +210,7 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ## 文档索引
 
+### 系统文档
 - [架构设计](docs/architecture.md) - 系统架构和服务划分
 - [数据模型](docs/data-model.md) - 数据库表和对象存储设计
 - [API 接口规范](docs/api-contracts.md) - REST API 详细说明
@@ -179,13 +218,30 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 - [TTS 服务规范](docs/tts-service.md) - TTS 服务接口和配置
 - [部署指南](docs/deployment.md) - 详细部署说明和故障排查
 
+### 开发规范
+- [代码规范](docs/coding-standards.md) - Go/Python/Shell 编码规范和最佳实践
+- [代码审查规范](docs/code-review.md) - 代码审查流程和检查清单
+- [提交信息规范](docs/commit-message.md) - Git 提交信息格式要求
+- [贡献指南](CONTRIBUTING.md) - 完整的开发工作流和贡献流程
+
 ## 贡献指南
+
+我们欢迎所有形式的贡献！请先阅读以下文档：
+
+1. 📖 [贡献指南](CONTRIBUTING.md) - 详细的开发工作流
+2. 📝 [代码规范](docs/coding-standards.md) - 编码规范和最佳实践
+3. 🔍 [代码审查规范](docs/code-review.md) - 代码审查流程
+4. 💬 [提交信息规范](docs/commit-message.md) - 提交信息格式
+
+**快速开始：**
 
 1. Fork 本项目
 2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启 Pull Request
+3. 开发代码并运行检查 (`make ci`)
+4. 提交更改（遵循提交信息规范）
+5. 推送到分支并开启 Pull Request
+
+**重要：** 所有代码必须通过 CI 检查才能合并！
 
 ## 许可证
 

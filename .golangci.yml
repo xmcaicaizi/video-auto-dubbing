@@ -1,0 +1,125 @@
+# golangci-lint 配置文件
+# 参考: https://golangci-lint.run/usage/configuration/
+
+run:
+  # 超时时间
+  timeout: 5m
+  # 要检查的模块（相对于项目根目录）
+  modules-download-mode: readonly
+  # 排除的目录
+  issues:
+    # 排除以下目录
+    exclude-dirs:
+      - vendor
+      - .git
+      - node_modules
+    # 排除以下文件
+    exclude-rules:
+      # 排除测试文件中的某些检查
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+    # 最大问题数（0 表示无限制）
+    max-issues-per-linter: 0
+    max-same-issues: 0
+
+# 启用的 linter
+linters:
+  enable:
+    # 代码质量
+    - errcheck          # 检查错误处理
+    - gosimple          # 简化代码
+    - govet             # go vet 检查
+    - ineffassign       # 检查未使用的赋值
+    - staticcheck       # 静态分析
+    - unused            # 检查未使用的代码
+    - varcheck          # 检查未使用的变量
+    
+    # 代码风格
+    - gofmt             # 代码格式
+    - goimports         # 导入管理
+    - gci               # 导入分组和排序
+    - misspell          # 拼写检查
+    - revive            # Go 代码检查（替代 golint）
+    
+    # 性能
+    - prealloc          # 预分配切片
+    
+    # 安全
+    - gosec             # 安全检查
+    
+    # 其他
+    - typecheck         # 类型检查
+    - unconvert         # 移除不必要的类型转换
+
+  disable:
+    # 暂时禁用的 linter（可根据需要启用）
+    - exhaustivestruct  # 结构体字段完整性检查（可能过于严格）
+    - funlen            # 函数长度检查（可能过于严格）
+    - gocognit          # 认知复杂度检查（可能过于严格）
+    - gocyclo           # 圈复杂度检查（可能过于严格）
+    - lll               # 行长度检查（使用 gofmt 即可）
+
+# Linter 配置
+linters-settings:
+  errcheck:
+    # 检查类型断言错误
+    check-type-assertions: true
+    # 检查错误返回值
+    check-blank: true
+  
+  goimports:
+    # 本地前缀（项目导入路径）
+    local-prefixes: vedio
+  
+  gci:
+    # 导入顺序：标准库、第三方、本地
+    sections:
+      - standard
+      - default
+      - prefix(vedio)
+    # 跳过生成的文件
+    skip-generated: true
+    # 跳过 vendor
+    skip-vendor: true
+  
+  gofmt:
+    # 简化代码
+    simplify: true
+  
+  revive:
+    # 规则配置
+    rules:
+      - name: exported
+        severity: warning
+      - name: var-naming
+        severity: warning
+      - name: package-comments
+        severity: warning
+      - name: range
+        severity: warning
+      - name: increment-decrement
+        severity: warning
+      - name: var-declaration
+        severity: warning
+  
+  gosec:
+    # 排除的检查（可根据需要调整）
+    excludes:
+      - G104  # 未检查错误（errcheck 已处理）
+      - G107  # HTTP 请求（某些场景需要）
+  
+  misspell:
+    # 语言
+    locale: US
+
+# 输出配置
+output:
+  # 输出格式
+  format: colored-line-number
+  # 打印问题编号
+  print-issued-lines: true
+  # 打印 linter 名称
+  print-linter-name: true
+

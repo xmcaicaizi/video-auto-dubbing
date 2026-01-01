@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"time"
 
+	"vedio/worker/internal/asr"
 	"vedio/worker/internal/config"
 	"vedio/worker/internal/database"
 	"vedio/worker/internal/models"
 	"vedio/worker/internal/queue"
 	"vedio/worker/internal/storage"
+	"vedio/worker/internal/translate"
+	"vedio/worker/internal/tts"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/google/uuid"
@@ -25,21 +28,31 @@ const (
 
 // Worker handles task processing.
 type Worker struct {
-	db        *database.DB
-	storage   *storage.Service
-	publisher *queue.Publisher
-	config    *config.Config
-	logger    *zap.Logger
+	db         *database.DB
+	storage    *storage.Service
+	publisher  *queue.Publisher
+	config     *config.Config
+	logger     *zap.Logger
+	asrClient  *asr.Client
+	transClient *translate.Client
+	ttsClient  *tts.Client
 }
 
 // New creates a new worker.
 func New(db *database.DB, storage *storage.Service, publisher *queue.Publisher, cfg *config.Config, logger *zap.Logger) *Worker {
+	asrClient := asr.NewClient(cfg.External.VolcEngineASR, logger)
+	transClient := translate.NewClient(cfg.External.GLM, logger)
+	ttsClient := tts.NewClient(cfg.TTS, logger)
+	
 	return &Worker{
-		db:        db,
-		storage:   storage,
-		publisher: publisher,
-		config:    cfg,
-		logger:    logger,
+		db:          db,
+		storage:     storage,
+		publisher:   publisher,
+		config:      cfg,
+		logger:      logger,
+		asrClient:   asrClient,
+		transClient: transClient,
+		ttsClient:   ttsClient,
 	}
 }
 
@@ -214,13 +227,16 @@ func (w *Worker) processMessage(ctx context.Context, step string, msg amqp.Deliv
 		return fmt.Errorf("step failed after %d attempts: %w", taskMsg.Attempt, processErr)
 	}
 
-	// Update step status to succeeded
+	// Update step status to succeeded with metrics
 	metrics := map[string]interface{}{
 		"duration_ms": duration.Milliseconds(),
+		"task_id":     taskID.String(),
+		"step":        step,
+		"trace_id":    taskMsg.TraceID,
 	}
 	metricsJSON, _ := json.Marshal(metrics)
 	metricsStr := string(metricsJSON)
-	if err := w.updateStepStatus(ctx, taskID, step, taskMsg.Attempt, "succeeded", nil); err != nil {
+	if err := w.updateStepStatusWithMetrics(ctx, taskID, step, taskMsg.Attempt, "succeeded", nil, &metricsStr); err != nil {
 		return fmt.Errorf("failed to update step status: %w", err)
 	}
 
@@ -243,6 +259,11 @@ func (w *Worker) getStepStatus(ctx context.Context, taskID uuid.UUID, step strin
 
 // updateStepStatus updates the status of a task step.
 func (w *Worker) updateStepStatus(ctx context.Context, taskID uuid.UUID, step string, attempt int, status string, errorMsg *string) error {
+	return w.updateStepStatusWithMetrics(ctx, taskID, step, attempt, status, errorMsg, nil)
+}
+
+// updateStepStatusWithMetrics updates the status of a task step with metrics.
+func (w *Worker) updateStepStatusWithMetrics(ctx context.Context, taskID uuid.UUID, step string, attempt int, status string, errorMsg *string, metricsJSON *string) error {
 	now := time.Now()
 
 	// Check if step record exists
@@ -255,11 +276,11 @@ func (w *Worker) updateStepStatus(ctx context.Context, taskID uuid.UUID, step st
 	if !exists {
 		// Insert new step record
 		insertQuery := `
-			INSERT INTO task_steps (task_id, step, status, attempt, started_at, error, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			INSERT INTO task_steps (task_id, step, status, attempt, started_at, error, metrics_json, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		`
 		_, err := w.db.ExecContext(ctx, insertQuery,
-			taskID, step, status, attempt, now, errorMsg, now, now,
+			taskID, step, status, attempt, now, errorMsg, metricsJSON, now, now,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to insert step: %w", err)
@@ -268,24 +289,24 @@ func (w *Worker) updateStepStatus(ctx context.Context, taskID uuid.UUID, step st
 		// Update existing step record
 		updateQuery := `
 			UPDATE task_steps
-			SET status = $1, error = $2, updated_at = $3
-			WHERE task_id = $4 AND step = $5 AND attempt = $6
+			SET status = $1, error = $2, metrics_json = $3, updated_at = $4
+			WHERE task_id = $5 AND step = $6 AND attempt = $7
 		`
 		if status == "succeeded" || status == "failed" {
 			updateQuery = `
 				UPDATE task_steps
-				SET status = $1, error = $2, ended_at = $3, updated_at = $4
-				WHERE task_id = $5 AND step = $6 AND attempt = $7
+				SET status = $1, error = $2, ended_at = $3, metrics_json = $4, updated_at = $5
+				WHERE task_id = $6 AND step = $7 AND attempt = $8
 			`
 			_, err := w.db.ExecContext(ctx, updateQuery,
-				status, errorMsg, now, now, taskID, step, attempt,
+				status, errorMsg, now, metricsJSON, now, taskID, step, attempt,
 			)
 			if err != nil {
 				return fmt.Errorf("failed to update step: %w", err)
 			}
 		} else {
 			_, err := w.db.ExecContext(ctx, updateQuery,
-				status, errorMsg, now, taskID, step, attempt,
+				status, errorMsg, metricsJSON, now, taskID, step, attempt,
 			)
 			if err != nil {
 				return fmt.Errorf("failed to update step: %w", err)

@@ -247,7 +247,7 @@ async def synthesize(
             file_size=len(audio_bytes),
         )
 
-    except (ModelNotLoadedError, SynthesisError) as e:
+    except (ModelNotLoadedError, SynthesisError):
         raise
     except Exception as e:
         logger.error("Unexpected error in synthesis", exc_info=True)

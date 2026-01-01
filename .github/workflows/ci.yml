@@ -50,10 +50,12 @@ jobs:
       
       - name: Install golangci-lint
         if: steps.check_dir.outputs.exists == 'true'
-        uses: golangci/golangci-lint-action@v4
-        with:
-          version: v1.55.2
-          # 不设置 working-directory，在步骤中 cd 到目录
+        run: |
+          # 不使用 golangci-lint-action（它会在仓库根目录执行并尝试用 go.sum 做缓存）
+          # 这里直接安装二进制，避免 go.sum 缺失/缓存服务异常导致失败
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
+            | sh -s -- -b "$(go env GOPATH)/bin" v1.55.2
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
       
       - name: Install dependencies
         if: steps.check_dir.outputs.exists == 'true'

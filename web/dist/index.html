@@ -60,6 +60,145 @@
             background: #5568d3;
         }
 
+        .settings-btn {
+            background: #f0f0f0;
+            color: #333;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 8px;
+        }
+
+        .settings-btn:hover {
+            background: #e6e6e6;
+        }
+
+        /* Settings modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+
+        .modal {
+            width: 720px;
+            max-width: calc(100% - 40px);
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .modal-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .modal-close {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 18px;
+            color: #666;
+        }
+
+        .modal-note {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 14px;
+            line-height: 1.5;
+        }
+
+        .settings-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .settings-section {
+            border: 1px solid #eee;
+            border-radius: 10px;
+            padding: 12px;
+        }
+
+        .settings-section h3 {
+            font-size: 13px;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .field {
+            margin-bottom: 10px;
+        }
+
+        .field label {
+            display: block;
+            font-size: 12px;
+            color: #555;
+            margin-bottom: 6px;
+        }
+
+        .field input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 12px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        }
+
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+            border: none;
+            padding: 10px 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .btn-secondary:hover {
+            background: #e6e6e6;
+        }
+
+        .btn-danger {
+            background: #ffebee;
+            color: #c62828;
+            border: none;
+            padding: 10px 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .btn-danger:hover {
+            background: #ffd7dc;
+        }
+
         .task-list-content {
             flex: 1;
             overflow-y: auto;
@@ -428,7 +567,10 @@
         <div class="task-list-panel">
             <div class="task-list-header">
                 <h2>任务列表</h2>
-                <button class="new-task-btn" onclick="showUploadDialog()">新建任务</button>
+                <div style="display:flex; align-items:center;">
+                    <button class="settings-btn" onclick="openSettings()">设置</button>
+                    <button class="new-task-btn" onclick="showUploadDialog()">新建任务</button>
+                </div>
             </div>
             <div class="task-list-content" id="taskList"></div>
         </div>
@@ -519,12 +661,114 @@
         </div>
     </div>
 
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settingsOverlay">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title">设置（API Key 持久化到本地浏览器）</div>
+                <button class="modal-close" onclick="closeSettings()">✕</button>
+            </div>
+            <div class="modal-note">
+                这些 Key 会保存在浏览器的 <code>localStorage</code> 中（仅本机可见）。创建任务时会随请求发给后端并写入任务表，用于 Worker 异步处理。请勿在不可信电脑上保存。
+            </div>
+            <div class="settings-grid">
+                <div class="settings-section">
+                    <h3>抖音/火山 ASR（appid/token/cluster）</h3>
+                    <div class="field">
+                        <label>ASR AppID</label>
+                        <input id="asrAppid" placeholder="your_appid">
+                    </div>
+                    <div class="field">
+                        <label>ASR Token</label>
+                        <input id="asrToken" placeholder="your_token">
+                    </div>
+                    <div class="field">
+                        <label>ASR Cluster</label>
+                        <input id="asrCluster" placeholder="your_cluster">
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <h3>智谱 GLM（BigModel）</h3>
+                    <div class="field">
+                        <label>GLM API Key</label>
+                        <input id="glmApiKey" placeholder="your_glm_api_key">
+                    </div>
+                    <div class="field">
+                        <label>GLM Model（默认 glm-4.5）</label>
+                        <input id="glmModel" placeholder="glm-4.5">
+                    </div>
+                </div>
+                <div class="settings-section" style="grid-column: span 2;">
+                    <h3>魔搭 ModelScope / IndexTTS-2</h3>
+                    <div class="field">
+                        <label>ModelScope Token</label>
+                        <input id="modelscopeToken" placeholder="your_modelscope_token">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-danger" onclick="clearSettings()">清除</button>
+                <button class="btn-secondary" onclick="closeSettings()">取消</button>
+                <button class="new-task-btn" onclick="saveSettings()">保存</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const API_BASE = '/api/v1';
         let currentTaskId = null;
         let pollInterval = null;
         let audioFile = null;
         let audioPlayer = null;
+        const SETTINGS_STORAGE_KEY = 'vedio_settings_v1';
+
+        function getSettings() {
+            try {
+                const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+                return raw ? JSON.parse(raw) : {};
+            } catch (_) {
+                return {};
+            }
+        }
+
+        function setSettings(next) {
+            localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(next || {}));
+        }
+
+        function openSettings() {
+            const s = getSettings();
+            document.getElementById('asrAppid').value = s.asr_appid || '';
+            document.getElementById('asrToken').value = s.asr_token || '';
+            document.getElementById('asrCluster').value = s.asr_cluster || '';
+            document.getElementById('glmApiKey').value = s.glm_api_key || '';
+            document.getElementById('glmModel').value = s.glm_model || 'glm-4.5';
+            document.getElementById('modelscopeToken').value = s.modelscope_token || '';
+            document.getElementById('settingsOverlay').style.display = 'flex';
+        }
+
+        function closeSettings() {
+            document.getElementById('settingsOverlay').style.display = 'none';
+        }
+
+        function saveSettings() {
+            const next = {
+                asr_appid: (document.getElementById('asrAppid').value || '').trim(),
+                asr_token: (document.getElementById('asrToken').value || '').trim(),
+                asr_cluster: (document.getElementById('asrCluster').value || '').trim(),
+                glm_api_key: (document.getElementById('glmApiKey').value || '').trim(),
+                glm_model: (document.getElementById('glmModel').value || 'glm-4.5').trim(),
+                modelscope_token: (document.getElementById('modelscopeToken').value || '').trim(),
+            };
+            setSettings(next);
+            closeSettings();
+            alert('设置已保存（仅本浏览器）');
+        }
+
+        function clearSettings() {
+            if (!confirm('确定要清除已保存的 Key 吗？')) return;
+            setSettings({});
+            openSettings();
+        }
 
         // 初始化
         document.addEventListener('DOMContentLoaded', () => {
@@ -579,6 +823,13 @@
             formData.append('video', file);
             formData.append('source_language', 'zh');
             formData.append('target_language', 'en');
+            const settings = getSettings();
+            if (settings.asr_appid) formData.append('asr_appid', settings.asr_appid);
+            if (settings.asr_token) formData.append('asr_token', settings.asr_token);
+            if (settings.asr_cluster) formData.append('asr_cluster', settings.asr_cluster);
+            if (settings.glm_api_key) formData.append('glm_api_key', settings.glm_api_key);
+            if (settings.glm_model) formData.append('glm_model', settings.glm_model);
+            if (settings.modelscope_token) formData.append('modelscope_token', settings.modelscope_token);
 
             const uploadArea = document.getElementById('videoUploadArea');
             uploadArea.innerHTML = '<div class="loading">上传中...</div>';

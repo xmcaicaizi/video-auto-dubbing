@@ -9,6 +9,7 @@ import (
 func Migrate(db *sql.DB) error {
 	migrations := []string{
 		createTasksTable,
+		alterTasksTableAddExternalKeys,
 		createTaskStepsTable,
 		createSegmentsTable,
 	}
@@ -31,6 +32,14 @@ CREATE TABLE IF NOT EXISTS tasks (
     source_video_key VARCHAR(255) NOT NULL,
     source_language VARCHAR(10) NOT NULL DEFAULT 'zh',
     target_language VARCHAR(10) NOT NULL DEFAULT 'en',
+    -- Per-task external credentials (MVP; consider encrypting at rest in production)
+    asr_appid TEXT,
+    asr_token TEXT,
+    asr_cluster TEXT,
+    glm_api_key TEXT,
+    glm_api_url TEXT,
+    glm_model TEXT,
+    modelscope_token TEXT,
     output_video_key VARCHAR(255),
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -38,6 +47,17 @@ CREATE TABLE IF NOT EXISTS tasks (
 
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
+`
+
+const alterTasksTableAddExternalKeys = `
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS asr_appid TEXT,
+    ADD COLUMN IF NOT EXISTS asr_token TEXT,
+    ADD COLUMN IF NOT EXISTS asr_cluster TEXT,
+    ADD COLUMN IF NOT EXISTS glm_api_key TEXT,
+    ADD COLUMN IF NOT EXISTS glm_api_url TEXT,
+    ADD COLUMN IF NOT EXISTS glm_model TEXT,
+    ADD COLUMN IF NOT EXISTS modelscope_token TEXT;
 `
 
 const createTaskStepsTable = `

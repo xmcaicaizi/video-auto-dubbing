@@ -192,6 +192,11 @@
     <div class="container">
         <h1>视频本地化自动配音系统</h1>
 
+        <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 20px;">
+            <div></div>
+            <button class="upload-btn" style="background:#f0f0f0; color:#333;" onclick="openSettings()">设置</button>
+        </div>
+
         <div class="upload-section" id="uploadSection">
             <h2>上传视频文件</h2>
             <input type="file" id="videoFile" accept="video/*">
@@ -229,6 +234,49 @@
 
     <script>
         const API_BASE = '/api/v1';
+        const SETTINGS_STORAGE_KEY = 'vedio_settings_v1';
+
+        function getSettings() {
+            try {
+                const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+                return raw ? JSON.parse(raw) : {};
+            } catch (_) {
+                return {};
+            }
+        }
+
+        function setSettings(next) {
+            localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(next || {}));
+        }
+
+        function openSettings() {
+            const s = getSettings();
+            document.getElementById('asr_appid').value = s.asr_appid || '';
+            document.getElementById('asr_token').value = s.asr_token || '';
+            document.getElementById('asr_cluster').value = s.asr_cluster || '';
+            document.getElementById('glm_api_key').value = s.glm_api_key || '';
+            document.getElementById('glm_model').value = s.glm_model || 'glm-4.5';
+            document.getElementById('modelscope_token').value = s.modelscope_token || '';
+            document.getElementById('settingsPanel').style.display = 'block';
+        }
+
+        function closeSettings() {
+            document.getElementById('settingsPanel').style.display = 'none';
+        }
+
+        function saveSettings() {
+            const next = {
+                asr_appid: (document.getElementById('asr_appid').value || '').trim(),
+                asr_token: (document.getElementById('asr_token').value || '').trim(),
+                asr_cluster: (document.getElementById('asr_cluster').value || '').trim(),
+                glm_api_key: (document.getElementById('glm_api_key').value || '').trim(),
+                glm_model: (document.getElementById('glm_model').value || 'glm-4.5').trim(),
+                modelscope_token: (document.getElementById('modelscope_token').value || '').trim(),
+            };
+            setSettings(next);
+            closeSettings();
+            alert('设置已保存（仅本浏览器）');
+        }
 
         // 上传视频
         async function uploadVideo() {
@@ -249,6 +297,13 @@
             formData.append('video', fileInput.files[0]);
             formData.append('source_language', sourceLang);
             formData.append('target_language', targetLang);
+            const settings = getSettings();
+            if (settings.asr_appid) formData.append('asr_appid', settings.asr_appid);
+            if (settings.asr_token) formData.append('asr_token', settings.asr_token);
+            if (settings.asr_cluster) formData.append('asr_cluster', settings.asr_cluster);
+            if (settings.glm_api_key) formData.append('glm_api_key', settings.glm_api_key);
+            if (settings.glm_model) formData.append('glm_model', settings.glm_model);
+            if (settings.modelscope_token) formData.append('modelscope_token', settings.modelscope_token);
 
             try {
                 const response = await fetch(`${API_BASE}/tasks`, {
@@ -381,6 +436,40 @@
         // 页面加载时获取任务列表
         loadTasks();
         setInterval(loadTasks, 5000); // 每5秒刷新一次
+        // Settings UI (simple inline panel)
+        document.addEventListener('DOMContentLoaded', () => {
+            const panel = document.createElement('div');
+            panel.id = 'settingsPanel';
+            panel.style.display = 'none';
+            panel.style.position = 'fixed';
+            panel.style.top = '20px';
+            panel.style.right = '20px';
+            panel.style.width = '360px';
+            panel.style.background = 'white';
+            panel.style.border = '1px solid #eee';
+            panel.style.borderRadius = '12px';
+            panel.style.padding = '16px';
+            panel.style.boxShadow = '0 10px 40px rgba(0,0,0,0.2)';
+            panel.style.zIndex = '9999';
+            panel.innerHTML = `
+                <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 8px;">
+                    <div style="font-weight:700; color:#333;">设置</div>
+                    <button class="btn" onclick="closeSettings()">✕</button>
+                </div>
+                <div style="font-size:12px; color:#666; margin-bottom:10px;">保存到 localStorage，创建任务时提交给后端。</div>
+                <div class="form-group"><label>ASR AppID</label><input id="asr_appid" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
+                <div class="form-group"><label>ASR Token</label><input id="asr_token" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
+                <div class="form-group"><label>ASR Cluster</label><input id="asr_cluster" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
+                <div class="form-group"><label>GLM API Key</label><input id="glm_api_key" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
+                <div class="form-group"><label>GLM Model</label><input id="glm_model" placeholder="glm-4.5" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
+                <div class="form-group"><label>ModelScope Token</label><input id="modelscope_token" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
+                <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:10px;">
+                    <button class="btn" onclick="closeSettings()">取消</button>
+                    <button class="upload-btn" onclick="saveSettings()">保存</button>
+                </div>
+            `;
+            document.body.appendChild(panel);
+        });
     </script>
 </body>
 </html>

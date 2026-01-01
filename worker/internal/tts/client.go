@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"vedio/worker/internal/config"
@@ -53,7 +54,7 @@ func NewClient(cfg config.TTSConfig, logger *zap.Logger) *Client {
 }
 
 // Synthesize performs TTS synthesis.
-func (c *Client) Synthesize(ctx context.Context, req SynthesisRequest) (io.ReadCloser, error) {
+func (c *Client) Synthesize(ctx context.Context, req SynthesisRequest, modelScopeToken string) (io.ReadCloser, error) {
 	// Create request body
 	bodyBytes, err := json.Marshal(req)
 	if err != nil {
@@ -70,6 +71,9 @@ func (c *Client) Synthesize(ctx context.Context, req SynthesisRequest) (io.ReadC
 	// Set headers
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json")
+	if modelScopeToken != "" {
+		httpReq.Header.Set("X-ModelScope-Token", modelScopeToken)
+	}
 
 	// Make request with retry
 	var resp *http.Response
@@ -85,6 +89,9 @@ func (c *Client) Synthesize(ctx context.Context, req SynthesisRequest) (io.ReadC
 			httpReq, _ = http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(bodyBytes))
 			httpReq.Header.Set("Content-Type", "application/json")
 			httpReq.Header.Set("Accept", "application/json")
+			if modelScopeToken != "" {
+				httpReq.Header.Set("X-ModelScope-Token", modelScopeToken)
+			}
 		}
 	}
 
@@ -107,7 +114,11 @@ func (c *Client) Synthesize(ctx context.Context, req SynthesisRequest) (io.ReadC
 
 	// Download audio from URL
 	if apiResp.AudioURL != "" {
-		audioReq, err := http.NewRequestWithContext(ctx, "GET", apiResp.AudioURL, nil)
+		audioURL := apiResp.AudioURL
+		if strings.HasPrefix(audioURL, "/") {
+			audioURL = strings.TrimRight(c.baseURL, "/") + audioURL
+		}
+		audioReq, err := http.NewRequestWithContext(ctx, "GET", audioURL, nil)
 		if err != nil {
 			resp.Body.Close()
 			return nil, fmt.Errorf("failed to create audio request: %w", err)

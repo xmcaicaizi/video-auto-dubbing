@@ -10,7 +10,9 @@ import (
 	"os/exec"
 	"time"
 
+	"vedio/worker/internal/config"
 	"vedio/worker/internal/models"
+	"vedio/worker/internal/translate"
 	"vedio/worker/internal/tts"
 
 	"github.com/google/uuid"
@@ -135,6 +137,17 @@ func (w *Worker) processASR(ctx context.Context, taskID uuid.UUID, msg models.Ta
 		return fmt.Errorf("failed to get audio: %w", err)
 	}
 	defer audioReader.Close()
+
+	// Load per-task external credentials (optional)
+	var asrAppID, asrToken, asrCluster string
+	queryTask := `SELECT asr_appid, asr_token, asr_cluster FROM tasks WHERE id = $1`
+	_ = w.db.QueryRowContext(ctx, queryTask, taskID).Scan(&asrAppID, &asrToken, &asrCluster)
+	w.logger.Debug("Loaded ASR credentials (per-task)",
+		zap.String("task_id", taskID.String()),
+		zap.Bool("has_asr_appid", asrAppID != ""),
+		zap.Bool("has_asr_token", asrToken != ""),
+		zap.Bool("has_asr_cluster", asrCluster != ""),
+	)
 
 	// Call ASR API
 	asrResult, err := w.asrClient.Recognize(ctx, audioReader, payload.Language)
@@ -268,8 +281,23 @@ func (w *Worker) processTranslate(ctx context.Context, taskID uuid.UUID, msg mod
 		texts[i] = seg.srcText
 	}
 
+	// Load per-task GLM config; fallback to worker config if not set.
+	var glmAPIKey, glmAPIURL, glmModel string
+	q := `SELECT glm_api_key, glm_api_url, glm_model FROM tasks WHERE id = $1`
+	_ = w.db.QueryRowContext(ctx, q, taskID).Scan(&glmAPIKey, &glmAPIURL, &glmModel)
+	if glmAPIKey == "" {
+		glmAPIKey = w.config.External.GLM.APIKey
+	}
+	if glmAPIURL == "" {
+		glmAPIURL = w.config.External.GLM.APIURL
+	}
+	if glmModel == "" {
+		glmModel = w.config.External.GLM.Model
+	}
+	transClient := translate.NewClient(config.GLMConfig{APIKey: glmAPIKey, APIURL: glmAPIURL, Model: glmModel}, w.logger)
+
 	// Call translation API
-	translations, err := w.transClient.Translate(ctx, texts, payload.SourceLanguage, payload.TargetLanguage)
+	translations, err := transClient.Translate(ctx, texts, payload.SourceLanguage, payload.TargetLanguage)
 	if err != nil {
 		return fmt.Errorf("translation API call failed: %w", err)
 	}
@@ -357,8 +385,9 @@ func (w *Worker) processTTS(ctx context.Context, taskID uuid.UUID, msg models.Ta
 
 	// Get task info to get target language
 	var targetLang string
-	query := `SELECT target_language FROM tasks WHERE id = $1`
-	if err := w.db.QueryRowContext(ctx, query, taskID).Scan(&targetLang); err != nil {
+	var modelscopeToken string
+	query := `SELECT target_language, modelscope_token FROM tasks WHERE id = $1`
+	if err := w.db.QueryRowContext(ctx, query, taskID).Scan(&targetLang, &modelscopeToken); err != nil {
 		return fmt.Errorf("failed to get task target language: %w", err)
 	}
 
@@ -374,7 +403,7 @@ func (w *Worker) processTTS(ctx context.Context, taskID uuid.UUID, msg models.Ta
 	}
 
 	// Call TTS service
-	audioReader, err := w.ttsClient.Synthesize(ctx, ttsReq)
+	audioReader, err := w.ttsClient.Synthesize(ctx, ttsReq, modelscopeToken)
 	if err != nil {
 		return fmt.Errorf("TTS API call failed: %w", err)
 	}

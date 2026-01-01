@@ -3,16 +3,19 @@
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.exceptions import (
+    AuthenticationError,
     DurationMismatchError,
     InternalError,
     InvalidParameterError,
     ModelNotLoadedError,
+    ModelScopeAPIError,
+    RateLimitError,
     SynthesisError,
     TextTooLongError,
 )
@@ -159,6 +162,45 @@ async def internal_error_handler(request: Request, exc: InternalError):
     )
 
 
+@app.exception_handler(AuthenticationError)
+async def authentication_error_handler(request: Request, exc: AuthenticationError):
+    """Handle authentication errors."""
+    return JSONResponse(
+        status_code=401,
+        content={
+            "error": "authentication_error",
+            "message": str(exc),
+            "details": {},
+        },
+    )
+
+
+@app.exception_handler(ModelScopeAPIError)
+async def modelscope_api_error_handler(request: Request, exc: ModelScopeAPIError):
+    """Handle ModelScope API errors."""
+    return JSONResponse(
+        status_code=502,
+        content={
+            "error": "modelscope_api_error",
+            "message": str(exc),
+            "details": {},
+        },
+    )
+
+
+@app.exception_handler(RateLimitError)
+async def rate_limit_error_handler(request: Request, exc: RateLimitError):
+    """Handle rate limit errors."""
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": "rate_limit_error",
+            "message": str(exc),
+            "details": {},
+        },
+    )
+
+
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
     """Health check endpoint."""
@@ -171,6 +213,7 @@ async def health_check():
 async def synthesize(
     request: SynthesisRequest,
     http_request: Request,
+    x_modelscope_token: str | None = Header(default=None, alias="X-ModelScope-Token"),
 ) -> Response:
     """Synthesize audio from text with time constraints."""
     # Validate request
@@ -194,6 +237,7 @@ async def synthesize(
                 language=request.language,
                 prosody_control=request.prosody_control,
                 sample_rate=request.sample_rate,
+                modelscope_token=x_modelscope_token,
             )
         else:
             # Whole text synthesis
@@ -204,6 +248,7 @@ async def synthesize(
                 language=request.language,
                 prosody_control=request.prosody_control,
                 sample_rate=request.sample_rate,
+                modelscope_token=x_modelscope_token,
             )
 
         # Calculate actual duration
@@ -223,7 +268,8 @@ async def synthesize(
         audio_path.write_bytes(audio_bytes)
 
         # Generate URL (in production, this would be a proper URL)
-        audio_url = f"/audio/{audio_filename}"
+        # Absolute URL so worker can download reliably
+        audio_url = str(http_request.base_url).rstrip("/") + f"/audio/{audio_filename}"
 
         # Check Accept header
         accept = http_request.headers.get("Accept", "")

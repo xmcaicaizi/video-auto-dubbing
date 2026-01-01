@@ -30,6 +30,14 @@ func NewTaskHandler(service *service.TaskService, logger *zap.Logger) *TaskHandl
 type CreateTaskRequest struct {
 	SourceLanguage string `form:"source_language" binding:"omitempty"`
 	TargetLanguage string `form:"target_language" binding:"omitempty"`
+	// External credentials configured by user on frontend (optional)
+	ASRAppID        string `form:"asr_appid" binding:"omitempty"`
+	ASRToken        string `form:"asr_token" binding:"omitempty"`
+	ASRCluster      string `form:"asr_cluster" binding:"omitempty"`
+	GLMAPIKey       string `form:"glm_api_key" binding:"omitempty"`
+	GLMAPIURL       string `form:"glm_api_url" binding:"omitempty"`
+	GLMModel        string `form:"glm_model" binding:"omitempty"`
+	ModelScopeToken string `form:"modelscope_token" binding:"omitempty"`
 }
 
 // CreateTaskResponse represents the response for creating a task.
@@ -70,7 +78,15 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 	}
 
 	// Create task
-	task, err := h.service.CreateTask(c.Request.Context(), file, req.SourceLanguage, req.TargetLanguage)
+	task, err := h.service.CreateTask(c.Request.Context(), file, req.SourceLanguage, req.TargetLanguage, service.CreateTaskOptions{
+		ASRAppID:        req.ASRAppID,
+		ASRToken:        req.ASRToken,
+		ASRCluster:      req.ASRCluster,
+		GLMAPIKey:       req.GLMAPIKey,
+		GLMAPIURL:       req.GLMAPIURL,
+		GLMModel:        req.GLMModel,
+		ModelScopeToken: req.ModelScopeToken,
+	})
 	if err != nil {
 		h.logger.Error("Failed to create task", zap.Error(err))
 		h.respondError(c, http.StatusInternalServerError, 1004, "内部服务错误", err.Error())

@@ -26,6 +26,14 @@ type Task struct {
 	SourceVideoKey string    `json:"-" db:"source_video_key"`
 	SourceLanguage string    `json:"source_language" db:"source_language"`
 	TargetLanguage string    `json:"target_language" db:"target_language"`
+	// Per-task external credentials (not exposed via JSON)
+	ASRAppID        *string `json:"-" db:"asr_appid"`
+	ASRToken        *string `json:"-" db:"asr_token"`
+	ASRCluster      *string `json:"-" db:"asr_cluster"`
+	GLMAPIKey       *string `json:"-" db:"glm_api_key"`
+	GLMAPIURL       *string `json:"-" db:"glm_api_url"`
+	GLMModel        *string `json:"-" db:"glm_model"`
+	ModelScopeToken *string `json:"-" db:"modelscope_token"`
 	OutputVideoKey *string   `json:"-" db:"output_video_key"`
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`

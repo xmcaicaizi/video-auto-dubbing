@@ -24,13 +24,14 @@ type Client struct {
 
 // SynthesisRequest represents a TTS synthesis request.
 type SynthesisRequest struct {
-	Text            string                 `json:"text"`
-	SpeakerID       string                 `json:"speaker_id"`
-	TargetDurationMs int                   `json:"target_duration_ms"`
-	Language        string                 `json:"language"`
-	ProsodyControl  map[string]interface{} `json:"prosody_control,omitempty"`
-	OutputFormat    string                 `json:"output_format"`
-	SampleRate      int                    `json:"sample_rate"`
+    Text            string                 `json:"text"`
+    SpeakerID       string                 `json:"speaker_id"`
+    PromptAudioURL  string                 `json:"prompt_audio_url,omitempty"`
+    TargetDurationMs int                   `json:"target_duration_ms"`
+    Language        string                 `json:"language"`
+    ProsodyControl  map[string]interface{} `json:"prosody_control,omitempty"`
+    OutputFormat    string                 `json:"output_format"`
+    SampleRate      int                    `json:"sample_rate"`
 }
 
 // SynthesisResponse represents a TTS synthesis response.
@@ -47,7 +48,7 @@ func NewClient(cfg config.TTSConfig, logger *zap.Logger) *Client {
 	return &Client{
 		baseURL: cfg.URL,
 		client: &http.Client{
-			Timeout: 120 * time.Second, // TTS can take longer
+			Timeout: 600 * time.Second, // TTS can take longer for IndexTTS2
 		},
 		logger: logger,
 	}

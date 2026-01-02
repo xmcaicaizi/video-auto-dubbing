@@ -3,6 +3,8 @@
 import io
 import logging
 import time
+import tempfile
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, Optional
 import threading
@@ -30,6 +32,8 @@ class TTSSynthesizer:
         """Initialize the TTS synthesizer."""
         self._pipelines: Dict[str, Any] = {}
         self._pipeline_lock = threading.Lock()
+        self._index_tts = None
+        self._index_tts_lock = threading.Lock()
         self._model_loaded = False  # indicates at least one pipeline is ready (or mock mode)
         self._executor: Optional[ThreadPoolExecutor] = None
         if settings.max_concurrent_requests > 0:
@@ -52,11 +56,20 @@ class TTSSynthesizer:
             self._model_loaded = True
             return
 
-        # Validate default token
+        if settings.tts_backend == "index_tts2":
+            try:
+                self._load_index_tts()
+                self._model_loaded = True
+                logger.info("IndexTTS2 model loaded successfully")
+                return
+            except Exception as e:
+                logger.error("Failed to load IndexTTS2 model", extra={"error": str(e)}, exc_info=True)
+                raise ModelNotLoadedError(f"Failed to load IndexTTS2 model: {e}") from e
+
         if not settings.modelscope_token:
-            raise AuthenticationError(
-                "MODELSCOPE_TOKEN is required but not set. "
-                "Please set it in environment variables."
+            logger.warning(
+                "MODELSCOPE_TOKEN not set; attempting public model access",
+                extra={"model_id": settings.modelscope_model_id},
             )
 
         logger.info(
@@ -97,29 +110,119 @@ class TTSSynthesizer:
 
     def _get_pipeline(self, token: str):
         """Get or create a ModelScope pipeline for a specific token."""
-        if settings.tts_backend == "mock":
+        if settings.tts_backend != "modelscope":
             return None
-        if not token:
-            raise AuthenticationError("ModelScope token is required")
+        cache_key = token or "public"
 
         with self._pipeline_lock:
-            if token in self._pipelines:
-                return self._pipelines[token]
+            if cache_key in self._pipelines:
+                return self._pipelines[cache_key]
 
             from modelscope.pipelines import pipeline
             from modelscope.utils.constant import Tasks
             import os
 
             # ModelScope reads token from env. Create pipeline under lock to avoid token races.
-            os.environ["MODELSCOPE_API_TOKEN"] = token
+            if token:
+                os.environ["MODELSCOPE_API_TOKEN"] = token
             p = pipeline(
                 task=Tasks.text_to_speech,
                 model=settings.modelscope_model_id,
             )
-            self._pipelines[token] = p
+            self._pipelines[cache_key] = p
             # If we successfully created one pipeline, mark loaded
             self._model_loaded = True
             return p
+
+    def _get_index_tts_device(self) -> Optional[str]:
+        device = settings.indextts_device.strip().lower()
+        if device in ("", "auto", "none"):
+            return None
+        return settings.indextts_device
+
+    def _load_index_tts(self) -> None:
+        if self._index_tts is not None:
+            return
+        with self._index_tts_lock:
+            if self._index_tts is not None:
+                return
+            from indextts.infer_v2 import IndexTTS2
+
+            self._index_tts = IndexTTS2(
+                cfg_path=settings.indextts_cfg_path,
+                model_dir=settings.indextts_model_dir,
+                use_fp16=settings.indextts_use_fp16,
+                device=self._get_index_tts_device(),
+                use_cuda_kernel=settings.indextts_use_cuda_kernel,
+                use_torch_compile=settings.indextts_use_torch_compile,
+            )
+
+    def _call_index_tts(
+        self,
+        text: str,
+        prompt_audio: str,
+    ) -> tuple[np.ndarray, int]:
+        if self._index_tts is None:
+            self._load_index_tts()
+        if self._index_tts is None:
+            raise ModelNotLoadedError("IndexTTS2 model is not loaded")
+
+        prompt_path = Path(prompt_audio)
+        temp_prompt_path = None
+        if prompt_audio.startswith("http://") or prompt_audio.startswith("https://"):
+            import requests
+
+            with tempfile.NamedTemporaryFile(
+                suffix=".wav",
+                delete=False,
+                dir=settings.audio_temp_dir,
+            ) as tmp_prompt:
+                temp_prompt_path = tmp_prompt.name
+            try:
+                resp = requests.get(prompt_audio, timeout=30)
+                resp.raise_for_status()
+                Path(temp_prompt_path).write_bytes(resp.content)
+                prompt_path = Path(temp_prompt_path)
+            except Exception as e:
+                raise SynthesisError(f"Failed to download prompt audio: {e}") from e
+        elif not prompt_path.exists():
+            raise ModelNotLoadedError(f"IndexTTS2 prompt audio not found: {prompt_audio}")
+
+        with tempfile.NamedTemporaryFile(
+            suffix=".wav",
+            delete=False,
+            dir=settings.audio_temp_dir,
+        ) as tmp:
+            output_path = tmp.name
+
+        try:
+            result = self._index_tts.infer(
+                spk_audio_prompt=str(prompt_path),
+                text=text,
+                output_path=output_path,
+                verbose=False,
+            )
+            if not output_path or not Path(output_path).exists():
+                raise SynthesisError(f"IndexTTS2 did not produce audio: {result}")
+
+            audio_data, sr = sf.read(output_path)
+            if not isinstance(audio_data, np.ndarray):
+                audio_data = np.array(audio_data, dtype=np.float32)
+            else:
+                audio_data = audio_data.astype(np.float32)
+            if audio_data.ndim > 1:
+                audio_data = np.mean(audio_data, axis=1)
+            return audio_data, int(sr)
+        finally:
+            try:
+                Path(output_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+            if temp_prompt_path:
+                try:
+                    Path(temp_prompt_path).unlink(missing_ok=True)
+                except Exception:
+                    pass
 
     def _call_modelscope_api(
         self,
@@ -151,8 +254,6 @@ class TTSSynthesizer:
             return np.zeros(samples, dtype=np.float32)
 
         token = modelscope_token or settings.modelscope_token
-        if not token:
-            raise AuthenticationError("MODELSCOPE_TOKEN is required but not set")
 
         pipeline_obj = self._get_pipeline(token)
         if pipeline_obj is None:
@@ -247,6 +348,32 @@ class TTSSynthesizer:
 
         raise ModelScopeAPIError(f"Failed to call ModelScope API after {settings.max_retries} attempts: {last_error}") from last_error
 
+    def _call_tts(
+        self,
+        text: str,
+        speaker_id: str,
+        language: str,
+        prosody_control: Optional[ProsodyControl],
+        modelscope_token: Optional[str],
+        prompt_audio_url: Optional[str],
+    ) -> tuple[np.ndarray, int]:
+        if settings.tts_backend == "index_tts2":
+            prompt_audio = prompt_audio_url or settings.indextts_prompt_audio
+            return self._call_index_tts(text=text, prompt_audio=prompt_audio)
+        if settings.tts_backend == "modelscope":
+            audio = self._call_modelscope_api(
+                text=text,
+                speaker_id=speaker_id,
+                language=language,
+                prosody_control=prosody_control,
+                modelscope_token=modelscope_token,
+            )
+            return audio, settings.default_sample_rate
+        # mock backend fallback
+        duration_sec = 1.0
+        samples = int(settings.default_sample_rate * duration_sec)
+        return np.zeros(samples, dtype=np.float32), settings.default_sample_rate
+
     def _adjust_duration(self, audio: np.ndarray, target_duration_ms: int, sample_rate: int) -> np.ndarray:
         """Adjust audio duration to match target duration.
 
@@ -311,6 +438,7 @@ class TTSSynthesizer:
         prosody_control: Optional[ProsodyControl] = None,
         sample_rate: int = 22050,
         modelscope_token: Optional[str] = None,
+        prompt_audio_url: Optional[str] = None,
     ) -> bytes:
         """Synthesize audio from text with time constraints.
 
@@ -344,23 +472,23 @@ class TTSSynthesizer:
         )
 
         try:
-            # Call ModelScope API
-            audio_data = self._call_modelscope_api(
+            audio_data, produced_sr = self._call_tts(
                 text=text,
                 speaker_id=speaker_id,
                 language=language,
                 prosody_control=prosody_control,
                 modelscope_token=modelscope_token,
+                prompt_audio_url=prompt_audio_url,
             )
 
             # Resample if needed
-            if sample_rate != settings.default_sample_rate:
+            if sample_rate != produced_sr:
                 try:
                     import librosa
 
                     audio_data = librosa.resample(
                         audio_data,
-                        orig_sr=settings.default_sample_rate,
+                        orig_sr=produced_sr,
                         target_sr=sample_rate,
                     )
                 except ImportError:
@@ -407,6 +535,7 @@ class TTSSynthesizer:
         prosody_control: Optional[ProsodyControl] = None,
         sample_rate: int = 22050,
         modelscope_token: Optional[str] = None,
+        prompt_audio_url: Optional[str] = None,
     ) -> bytes:
         """Synthesize audio with segment-level time constraints.
 
@@ -453,6 +582,7 @@ class TTSSynthesizer:
                         prosody_control=prosody_control,
                         sample_rate=sample_rate,
                         modelscope_token=modelscope_token,
+                        prompt_audio_url=prompt_audio_url,
                     )
                     futures[future] = idx
 
@@ -478,6 +608,7 @@ class TTSSynthesizer:
                         prosody_control=prosody_control,
                         sample_rate=sample_rate,
                         modelscope_token=modelscope_token,
+                        prompt_audio_url=prompt_audio_url,
                     )
                     segment_audios.append(audio)
 

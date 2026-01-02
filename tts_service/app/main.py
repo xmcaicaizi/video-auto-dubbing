@@ -1,5 +1,6 @@
 """FastAPI application entry point for TTS service."""
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -236,17 +237,20 @@ async def synthesize(
                 }
                 for seg in request.time_constraints.segments
             ]
-            audio_bytes = synthesizer.synthesize_with_segments(
+            audio_bytes = await asyncio.to_thread(
+                synthesizer.synthesize_with_segments,
                 segments=segments,
                 speaker_id=request.speaker_id,
                 language=request.language,
                 prosody_control=request.prosody_control,
                 sample_rate=request.sample_rate,
                 modelscope_token=x_modelscope_token,
+                prompt_audio_url=request.prompt_audio_url,
             )
         else:
             # Whole text synthesis
-            audio_bytes = synthesizer.synthesize(
+            audio_bytes = await asyncio.to_thread(
+                synthesizer.synthesize,
                 text=request.text,
                 target_duration_ms=request.target_duration_ms,
                 speaker_id=request.speaker_id,
@@ -254,6 +258,7 @@ async def synthesize(
                 prosody_control=request.prosody_control,
                 sample_rate=request.sample_rate,
                 modelscope_token=x_modelscope_token,
+                prompt_audio_url=request.prompt_audio_url,
             )
 
         # Calculate actual duration
@@ -322,21 +327,25 @@ async def synthesize_batch(request: BatchSynthesisRequest):
                     }
                     for seg in req.time_constraints.segments
                 ]
-                audio_bytes = synthesizer.synthesize_with_segments(
+                audio_bytes = await asyncio.to_thread(
+                    synthesizer.synthesize_with_segments,
                     segments=segments,
                     speaker_id=req.speaker_id,
                     language=req.language,
                     prosody_control=req.prosody_control,
                     sample_rate=req.sample_rate,
+                    prompt_audio_url=req.prompt_audio_url,
                 )
             else:
-                audio_bytes = synthesizer.synthesize(
+                audio_bytes = await asyncio.to_thread(
+                    synthesizer.synthesize,
                     text=req.text,
                     target_duration_ms=req.target_duration_ms,
                     speaker_id=req.speaker_id,
                     language=req.language,
                     prosody_control=req.prosody_control,
                     sample_rate=req.sample_rate,
+                    prompt_audio_url=req.prompt_audio_url,
                 )
 
             # Save segment audio

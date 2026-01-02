@@ -38,7 +38,7 @@ async def startup_event() -> None:
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
-    model_loaded = transcriber._model is not None
+    model_loaded = getattr(transcriber, "_model_loaded", False)
     status = "healthy" if model_loaded else "degraded"
     return HealthResponse(status=status, model_loaded=model_loaded)
 

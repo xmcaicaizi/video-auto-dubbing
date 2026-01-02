@@ -10,10 +10,10 @@ class Settings(BaseSettings):
     asr_port: int = 8002
 
     # Moonshine model configuration
-    asr_model_id: str = "moonshine-base"
-    asr_device: str = "cuda"
+    asr_model_id: str = "moonshine/tiny"
+    asr_device: str = "cpu"
     asr_compute_type: str = "float16"
-    asr_backend: str = "moonshine"  # "moonshine" or "mock"
+    asr_backend: str = "moonshine_onnx"  # "moonshine_onnx" or "mock"
 
     # Audio settings
     target_sample_rate: int = 16000

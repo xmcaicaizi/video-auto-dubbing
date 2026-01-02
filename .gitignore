@@ -76,6 +76,9 @@ temp/
 *.mp4
 *.wav
 *.mp3
+*.mkv
+test_vedio/
+_vendor/
 
 # uv
 uv.lock.bak

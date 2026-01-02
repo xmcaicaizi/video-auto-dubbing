@@ -1,7 +1,7 @@
 # ASR 服务规范（Moonshine）
 
 ## 1. 简介
-ASR 服务通过 Moonshine 开源模型提供语音识别能力，返回句级时间戳（segment）。
+ASR 服务通过 Moonshine ONNX 模型提供语音识别能力，返回句级时间戳（segment）。
 
 ## 2. 服务地址
 - **生产环境**: `http://asr_service:8002`
@@ -47,7 +47,11 @@ ASR 服务通过 Moonshine 开源模型提供语音识别能力，返回句级�
 ```
 
 ## 4. 环境变量
-- `ASR_MODEL_ID`: Moonshine 模型 ID（默认 `moonshine-base`）
-- `ASR_DEVICE`: 运行设备（默认 `cuda`）
+- `ASR_MODEL_ID`: Moonshine 模型 ID（默认 `moonshine/tiny`）
+- `ASR_DEVICE`: 运行设备（默认 `cpu`）
 - `ASR_COMPUTE_TYPE`: 推理精度（默认 `float16`）
-- `ASR_BACKEND`: 后端模式（`moonshine` 或 `mock`）
+- `ASR_BACKEND`: 后端模式（`moonshine_onnx` 或 `mock`）
+
+## 5. 依赖说明
+- `ASR_BACKEND=mock` 可用于快速联调。
+- 真实识别依赖 `useful-moonshine-onnx`（从官方仓库的 `moonshine-onnx` 子目录安装）。

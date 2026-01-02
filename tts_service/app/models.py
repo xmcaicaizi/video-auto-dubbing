@@ -32,6 +32,9 @@ class SynthesisRequest(BaseModel):
 
     text: str = Field(min_length=1, description="Text to synthesize")
     speaker_id: str = Field(default="default", description="Speaker ID")
+    prompt_audio_url: Optional[str] = Field(
+        default=None, description="Prompt audio URL for voice cloning"
+    )
     target_duration_ms: int = Field(gt=0, description="Target duration in milliseconds")
     language: str = Field(default="en", description="Language code (ISO 639-1)")
     prosody_control: Optional[ProsodyControl] = Field(

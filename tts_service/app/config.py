@@ -12,10 +12,19 @@ class Settings(BaseSettings):
     tts_workers: int = 1
 
     # ModelScope configuration
-    modelscope_token: str = ""  # ModelScope API token (required)
+    modelscope_token: str = ""  # ModelScope API token (optional for public models)
     modelscope_model_id: str = "IndexTeam/IndexTTS-2"  # Model ID on ModelScope
-    tts_backend: str = "modelscope"  # Backend: "modelscope" or "mock"
+    tts_backend: str = "index_tts2"  # Backend: "index_tts2", "modelscope", or "mock"
     strict_duration: bool = False  # Whether to strictly enforce target_duration_ms
+
+    # IndexTTS2 local inference configuration
+    indextts_model_dir: str = "/app/models/IndexTTS-2"
+    indextts_cfg_path: str = "/app/models/IndexTTS-2/config.yaml"
+    indextts_prompt_audio: str = "/app/assets/voice_01.wav"
+    indextts_device: str = "auto"
+    indextts_use_fp16: bool = True
+    indextts_use_torch_compile: bool = False
+    indextts_use_cuda_kernel: bool = False
 
     # Legacy model configuration (deprecated, kept for backward compatibility)
     model_path: str = "./models/index_tts2"

@@ -376,9 +376,74 @@ func (w *Worker) processTTS(ctx context.Context, taskID uuid.UUID, msg models.Ta
 		zap.Int("target_duration_ms", payload.TargetDurationMs),
 	)
 
+	// Build prompt audio from original segment to preserve voice
+	var startMs, endMs int
+	segQuery := `SELECT start_ms, end_ms FROM segments WHERE task_id = $1 AND idx = $2`
+	if err := w.db.QueryRowContext(ctx, segQuery, taskID, payload.SegmentIdx).Scan(&startMs, &endMs); err != nil {
+		return fmt.Errorf("failed to get segment timing: %w", err)
+	}
+	if endMs <= startMs {
+		return fmt.Errorf("invalid segment duration: start=%d end=%d", startMs, endMs)
+	}
+
+	sourceAudioKey := fmt.Sprintf("audios/%s/source.wav", taskID)
+	sourceAudioPath := fmt.Sprintf("/tmp/%s_source.wav", taskID)
+	if _, err := os.Stat(sourceAudioPath); err != nil {
+		audioReader, err := w.storage.GetObject(ctx, sourceAudioKey)
+		if err != nil {
+			return fmt.Errorf("failed to get source audio: %w", err)
+		}
+		defer audioReader.Close()
+
+		sourceFile, err := os.Create(sourceAudioPath)
+		if err != nil {
+			return fmt.Errorf("failed to create source audio file: %w", err)
+		}
+		if _, err := io.Copy(sourceFile, audioReader); err != nil {
+			sourceFile.Close()
+			return fmt.Errorf("failed to write source audio: %w", err)
+		}
+		sourceFile.Close()
+	}
+
+	promptPath := fmt.Sprintf("/tmp/%s_prompt_%d.wav", taskID, payload.SegmentIdx)
+	defer os.Remove(promptPath)
+	startSec := fmt.Sprintf("%.3f", float64(startMs)/1000.0)
+	durSec := fmt.Sprintf("%.3f", float64(endMs-startMs)/1000.0)
+	cmd := exec.CommandContext(ctx, w.config.FFmpeg.Path,
+		"-ss", startSec,
+		"-t", durSec,
+		"-i", sourceAudioPath,
+		"-ac", "1",
+		"-ar", "16000",
+		"-y",
+		promptPath,
+	)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("ffmpeg prompt cut failed: %w", err)
+	}
+
+	promptFile, err := os.Open(promptPath)
+	if err != nil {
+		return fmt.Errorf("failed to open prompt audio: %w", err)
+	}
+	defer promptFile.Close()
+	promptStat, err := promptFile.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to stat prompt audio: %w", err)
+	}
+	promptKey := fmt.Sprintf("tts/%s/prompt_%d.wav", taskID, payload.SegmentIdx)
+	if err := w.storage.PutObject(ctx, promptKey, promptFile, promptStat.Size(), "audio/wav"); err != nil {
+		return fmt.Errorf("failed to upload prompt audio: %w", err)
+	}
+	promptURL, err := w.storage.PresignedGetURL(ctx, promptKey, 1*time.Hour)
+	if err != nil {
+		return fmt.Errorf("failed to sign prompt audio URL: %w", err)
+	}
+
 	// Get task info to get target language
 	var targetLang string
-	var modelscopeToken string
+	var modelscopeToken *string
 	query := `SELECT target_language, modelscope_token FROM tasks WHERE id = $1`
 	if err := w.db.QueryRowContext(ctx, query, taskID).Scan(&targetLang, &modelscopeToken); err != nil {
 		return fmt.Errorf("failed to get task target language: %w", err)
@@ -388,6 +453,7 @@ func (w *Worker) processTTS(ctx context.Context, taskID uuid.UUID, msg models.Ta
 	ttsReq := tts.SynthesisRequest{
 		Text:             payload.Text,
 		SpeakerID:      payload.SpeakerID,
+		PromptAudioURL: promptURL,
 		TargetDurationMs: payload.TargetDurationMs,
 		Language:         targetLang,
 		ProsodyControl:  payload.ProsodyControl,
@@ -396,7 +462,11 @@ func (w *Worker) processTTS(ctx context.Context, taskID uuid.UUID, msg models.Ta
 	}
 
 	// Call TTS service
-	audioReader, err := w.ttsClient.Synthesize(ctx, ttsReq, modelscopeToken)
+	token := ""
+	if modelscopeToken != nil {
+		token = *modelscopeToken
+	}
+	audioReader, err := w.ttsClient.Synthesize(ctx, ttsReq, token)
 	if err != nil {
 		return fmt.Errorf("TTS API call failed: %w", err)
 	}

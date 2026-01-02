@@ -31,7 +31,7 @@ graph TB
     end
 
     subgraph External["外部服务"]
-        VolcASR[火山引擎 ASR API]
+        MoonshineASR[Moonshine ASR Service]
         GLM_API[GLM 翻译 API]
     end
 
@@ -55,19 +55,19 @@ graph TB
 
     Worker1 -->|读取/写入| PostgreSQL
     Worker1 -->|读取/写入| MinIO
-    Worker1 -->|调用| VolcASR
+    Worker1 -->|调用| MoonshineASR
     Worker1 -->|调用| GLM_API
     Worker1 -->|调用| TTS_Service
 
     Worker2 -->|读取/写入| PostgreSQL
     Worker2 -->|读取/写入| MinIO
-    Worker2 -->|调用| VolcASR
+    Worker2 -->|调用| MoonshineASR
     Worker2 -->|调用| GLM_API
     Worker2 -->|调用| TTS_Service
 
     WorkerN -->|读取/写入| PostgreSQL
     WorkerN -->|读取/写入| MinIO
-    WorkerN -->|调用| VolcASR
+    WorkerN -->|调用| MoonshineASR
     WorkerN -->|调用| GLM_API
     WorkerN -->|调用| TTS_Service
 
@@ -84,7 +84,7 @@ sequenceDiagram
     participant Storage as MinIO
     participant Queue as RabbitMQ
     participant Worker as Worker
-    participant ASR as 火山引擎 ASR
+    participant ASR as Moonshine ASR
     participant GLM as GLM API
     participant TTS as TTS 服务
 
@@ -100,7 +100,7 @@ sequenceDiagram
     Worker->>Queue: 投递 asr 任务
 
     Queue->>Worker: 消费 asr
-    Worker->>ASR: 调用 ASR API
+    Worker->>ASR: 调用 ASR 服务
     ASR->>Worker: 返回识别结果
     Worker->>Storage: 保存 ASR 结果
     Worker->>DB: 保存 segments
@@ -140,7 +140,7 @@ flowchart LR
 
     subgraph Processing["处理流程"]
         Extract[提取音频<br/>ffmpeg]
-        ASR_Step[语音识别<br/>火山引擎]
+        ASR_Step[语音识别<br/>Moonshine]
         Translate_Step[机器翻译<br/>GLM]
         TTS_Step[语音合成<br/>IndexTTS2]
         Mux[视频合成<br/>ffmpeg]

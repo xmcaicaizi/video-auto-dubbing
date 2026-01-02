@@ -3,7 +3,6 @@ package worker
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -132,26 +131,7 @@ func (w *Worker) processASR(ctx context.Context, taskID uuid.UUID, msg models.Ta
 		zap.String("language", payload.Language),
 	)
 
-	// Load per-task ASR API Key
-	var asrAPIKey sql.NullString
-	queryTask := `SELECT asr_api_key FROM tasks WHERE id = $1`
-	if err := w.db.QueryRowContext(ctx, queryTask, taskID).Scan(&asrAPIKey); err != nil {
-		return fmt.Errorf("failed to load task ASR credentials: %w", err)
-	}
-
-	// Fallback to environment variable if not set per-task (for backward compatibility)
-	apiKey := ""
-	if asrAPIKey.Valid && asrAPIKey.String != "" {
-		apiKey = asrAPIKey.String
-	}
-	// Note: If apiKey is empty, the ASR client will return an error
-
-	w.logger.Debug("Loaded ASR credentials (per-task)",
-		zap.String("task_id", taskID.String()),
-		zap.Bool("has_asr_api_key", apiKey != ""),
-	)
-
-	// Generate presigned URL for audio (豆包语音 needs to download it)
+	// Generate presigned URL for audio (ASR service needs to download it)
 	audioURL, err := w.storage.PresignedGetURL(ctx, payload.AudioKey, 1*time.Hour)
 	if err != nil {
 		return fmt.Errorf("failed to generate presigned URL for audio: %w", err)
@@ -162,10 +142,10 @@ func (w *Worker) processASR(ctx context.Context, taskID uuid.UUID, msg models.Ta
 		zap.String("audio_url", audioURL),
 	)
 
-	// Call ASR API (豆包语音 录音文件识别标准版)
-	asrResult, err := w.asrClient.Recognize(ctx, audioURL, payload.Language, apiKey)
+	// Call ASR service (Moonshine)
+	asrResult, err := w.asrClient.Recognize(ctx, audioURL, payload.Language)
 	if err != nil {
-		return fmt.Errorf("ASR API call failed: %w", err)
+		return fmt.Errorf("ASR service call failed: %w", err)
 	}
 
 	w.logger.Info("ASR completed",

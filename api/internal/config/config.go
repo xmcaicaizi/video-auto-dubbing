@@ -54,14 +54,7 @@ type TTSConfig struct {
 
 // ExternalConfig holds external API configuration.
 type ExternalConfig struct {
-	VolcEngineASR VolcEngineASRConfig
 	GLM           GLMConfig
-}
-
-// VolcEngineASRConfig holds VolcEngine ASR API configuration.
-type VolcEngineASRConfig struct {
-	AccessKey string
-	SecretKey string
 }
 
 // GLMConfig holds GLM API configuration.
@@ -125,10 +118,6 @@ func Load() (*Config, error) {
 			URL: viper.GetString("TTS_SERVICE_URL"),
 		},
 		External: ExternalConfig{
-			VolcEngineASR: VolcEngineASRConfig{
-				AccessKey: viper.GetString("VOLCENGINE_ASR_ACCESS_KEY"),
-				SecretKey: viper.GetString("VOLCENGINE_ASR_SECRET_KEY"),
-			},
 			GLM: GLMConfig{
 				APIKey: viper.GetString("GLM_API_KEY"),
 				APIURL: viper.GetString("GLM_API_URL"),

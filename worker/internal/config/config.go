@@ -29,7 +29,7 @@ type DatabaseConfig struct {
 // MinIOConfig holds MinIO configuration.
 type MinIOConfig struct {
 	Endpoint       string
-	PublicEndpoint string // External endpoint for presigned URLs (豆包语音等外部服务可访问)
+	PublicEndpoint string // External endpoint for presigned URLs (ASR service can access)
 	AccessKey      string
 	SecretKey      string
 	UseSSL         bool
@@ -48,14 +48,13 @@ type TTSConfig struct {
 
 // ExternalConfig holds external API configuration.
 type ExternalConfig struct {
-	VolcEngineASR VolcEngineASRConfig
+	ASR ASRConfig
 	GLM           GLMConfig
 }
 
-// VolcEngineASRConfig holds VolcEngine ASR API configuration.
-type VolcEngineASRConfig struct {
-	AccessKey string
-	SecretKey string
+// ASRConfig holds ASR service configuration.
+type ASRConfig struct {
+	URL string
 }
 
 // GLMConfig holds GLM API configuration.
@@ -90,6 +89,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("MINIO_BUCKET", "videos")
 	viper.SetDefault("RABBITMQ_URL", "amqp://rabbitmq:rabbitmq123@localhost:5672/")
 	viper.SetDefault("TTS_SERVICE_URL", "http://localhost:8000")
+	viper.SetDefault("ASR_SERVICE_URL", "http://localhost:8002")
 	// ZhipuAI BigModel chat completions endpoint
 	viper.SetDefault("GLM_API_URL", "https://open.bigmodel.cn/api/paas/v4/chat/completions")
 	viper.SetDefault("GLM_MODEL", "glm-4.5")
@@ -119,9 +119,8 @@ func Load() (*Config, error) {
 			URL: viper.GetString("TTS_SERVICE_URL"),
 		},
 		External: ExternalConfig{
-			VolcEngineASR: VolcEngineASRConfig{
-				AccessKey: viper.GetString("VOLCENGINE_ASR_ACCESS_KEY"),
-				SecretKey: viper.GetString("VOLCENGINE_ASR_SECRET_KEY"),
+			ASR: ASRConfig{
+				URL: viper.GetString("ASR_SERVICE_URL"),
 			},
 			GLM: GLMConfig{
 				APIKey: viper.GetString("GLM_API_KEY"),
@@ -158,6 +157,9 @@ func (c *Config) validate() error {
 	}
 	if c.RabbitMQ.URL == "" {
 		return fmt.Errorf("RABBITMQ_URL is required")
+	}
+	if c.External.ASR.URL == "" {
+		return fmt.Errorf("ASR_SERVICE_URL is required")
 	}
 	return nil
 }

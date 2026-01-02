@@ -83,7 +83,7 @@
 ```
 
 **处理逻辑**:
-- 调用火山引擎 ASR API
+- 调用 Moonshine ASR 服务
 - 保存识别结果（含时间戳）到 MinIO
 - 解析结果并写入 `segments` 表
 - 成功后投递 `task.translate` 消息（每个 segment 一条消息，或批量处理）

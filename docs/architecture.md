@@ -50,7 +50,7 @@
 
 **步骤拆分粒度：**
 - `extract_audio`: 提取音频（ffmpeg）
-- `asr`: 语音识别（火山引擎 API）
+- `asr`: 语音识别（Moonshine ASR 服务）
 - `translate`: 机器翻译（GLM API）
 - `tts`: 语音合成（调用 tts_service）
 - `mux_video`: 视频合成（ffmpeg）
@@ -113,7 +113,7 @@ sequenceDiagram
     Worker->>Queue: 投递 asr 任务
 
     Queue->>Worker: 消费 asr
-    Worker->>API: 调用火山引擎 ASR
+    Worker->>API: 调用 Moonshine ASR 服务
     Worker->>DB: 保存识别结果
     Worker->>Queue: 投递 translate 任务
 

@@ -1,229 +1,228 @@
-# 启动指南
+﻿# 鍚姩鎸囧崡
 
-本文档记录视频本地化自动配音系统的启动流程和常见问题解决方案。
+鏈枃妗ｈ褰曡棰戞湰鍦板寲鑷姩閰嶉煶绯荤粺鐨勫惎鍔ㄦ祦绋嬪拰甯歌闂瑙ｅ喅鏂规銆?
 
-## 快速启动
+## 蹇€熷惎鍔?
 
-### 前置要求
+### 鍓嶇疆瑕佹眰
 
-1. **Docker Desktop** 已安装并运行
-   - Windows: 确保 `com.docker.service` 服务已启动（可能需要管理员权限）
-   - 验证：运行 `docker version` 应能看到 Server 信息
+1. **Docker Desktop** 宸插畨瑁呭苟杩愯
+   - Windows: 纭繚 `com.docker.service` 鏈嶅姟宸插惎鍔紙鍙兘闇€瑕佺鐞嗗憳鏉冮檺锛?
+   - 楠岃瘉锛氳繍琛?`docker version` 搴旇兘鐪嬪埌 Server 淇℃伅
 
-2. **环境变量配置**（可选，推荐通过前端设置）
-   - `ASR_API_KEY`: 豆包语音 ASR API Key
-   - `GLM_API_KEY`: 智谱 GLM API Key
-   - `GLM_API_URL`: GLM API 地址（默认：https://open.bigmodel.cn/api/paas/v4/chat/completions）
-   - `GLM_MODEL`: GLM 模型名（默认：glm-4.5）
+2. **鐜鍙橀噺閰嶇疆**锛堝彲閫夛紝鎺ㄨ崘閫氳繃鍓嶇璁剧疆锛?
+| ASR Service | http://localhost:8002 | Moonshine ASR |
+   - `GLM_API_URL`: GLM API 鍦板潃锛堥粯璁わ細https://open.bigmodel.cn/api/paas/v4/chat/completions锛?
+   - `GLM_MODEL`: GLM 妯″瀷鍚嶏紙榛樿锛歡lm-4.5锛?
    - `MODELSCOPE_TOKEN`: ModelScope API Token
-   - `MINIO_PUBLIC_ENDPOINT`: MinIO 公网访问地址（如果 ASR 需要从外网下载音频）
-
-### 启动步骤
+   - `MINIO_PUBLIC_ENDPOINT`: MinIO 鍏綉璁块棶鍦板潃锛堝鏋?ASR 鏈嶅姟涓嶅湪鍚屼竴缃戠粶锛?
+### 鍚姩姝ラ
 
 ```bash
-# 1. 进入项目目录
+# 1. 杩涘叆椤圭洰鐩綍
 cd vedio
 
-# 2. 启动所有服务
+# 2. 鍚姩鎵€鏈夋湇鍔?
 docker compose up -d
 
-# 3. 查看服务状态
+# 3. 鏌ョ湅鏈嶅姟鐘舵€?
 docker compose ps
 
-# 4. 查看日志（可选）
+# 4. 鏌ョ湅鏃ュ織锛堝彲閫夛級
 docker compose logs -f
 ```
 
-### 服务访问地址
+### 鏈嶅姟璁块棶鍦板潃
 
-| 服务 | 地址 | 说明 |
+| 鏈嶅姟 | 鍦板潃 | 璇存槑 |
 |------|------|------|
-| 前端界面 | http://localhost | 通过 NGINX 网关访问 |
-| API 服务 | http://localhost:8080 | 后端 API |
-| TTS 服务 | http://localhost:8001 | 语音合成服务（默认 8001，避免与 8000 冲突） |
-| MinIO 控制台 | http://localhost:9001 | 对象存储管理 |
-| RabbitMQ 管理台 | http://localhost:15672 | 消息队列管理 |
-| PostgreSQL | localhost:5432 | 数据库 |
+| 鍓嶇鐣岄潰 | http://localhost | 閫氳繃 NGINX 缃戝叧璁块棶 |
+| API 鏈嶅姟 | http://localhost:8080 | 鍚庣 API |
+| ASR Service | http://localhost:8002 | Moonshine ASR |
+| TTS 鏈嶅姟 | http://localhost:8001 | 璇煶鍚堟垚鏈嶅姟锛堥粯璁?8001锛岄伩鍏嶄笌 8000 鍐茬獊锛?|
+| MinIO 鎺у埗鍙?| http://localhost:9001 | 瀵硅薄瀛樺偍绠＄悊 |
+| RabbitMQ 绠＄悊鍙?| http://localhost:15672 | 娑堟伅闃熷垪绠＄悊 |
+| PostgreSQL | localhost:5432 | 鏁版嵁搴?|
 
-## 常见问题
+## 甯歌闂
 
-### 1. Docker Engine 未运行
+### 1. Docker Engine 鏈繍琛?
 
-**症状**：
+**鐥囩姸**锛?
 ```
 error during connect: open //./pipe/docker_engine: The system cannot find the file specified
 ```
 
-**解决方案**：
-1. 启动 Docker Desktop 应用程序
-2. 以管理员身份运行 PowerShell，执行：
+**瑙ｅ喅鏂规**锛?
+1. 鍚姩 Docker Desktop 搴旂敤绋嬪簭
+2. 浠ョ鐞嗗憳韬唤杩愯 PowerShell锛屾墽琛岋細
    ```powershell
    Start-Service com.docker.service
    ```
-3. 验证：`docker version` 应显示 Server 信息
+3. 楠岃瘉锛歚docker version` 搴旀樉绀?Server 淇℃伅
 
-### 2. 端口冲突
+### 2. 绔彛鍐茬獊
 
-**症状**：
+**鐥囩姸**锛?
 ```
 Bind for 0.0.0.0:8000 failed: port is already allocated
 ```
 
-**解决方案**：
-- 检查占用端口的容器：`docker ps --format "table {{.Names}}\t{{.Ports}}"`
-- 修改 `docker-compose.yml` 中的端口映射，或停止占用端口的容器
-- TTS 服务默认使用 8001 端口以避免冲突
+**瑙ｅ喅鏂规**锛?
+- 妫€鏌ュ崰鐢ㄧ鍙ｇ殑瀹瑰櫒锛歚docker ps --format "table {{.Names}}\t{{.Ports}}"`
+- 淇敼 `docker-compose.yml` 涓殑绔彛鏄犲皠锛屾垨鍋滄鍗犵敤绔彛鐨勫鍣?
+- TTS 鏈嶅姟榛樿浣跨敤 8001 绔彛浠ラ伩鍏嶅啿绐?
 
-### 3. 构建失败：缺少 go.sum
+### 3. 鏋勫缓澶辫触锛氱己灏?go.sum
 
-**症状**：
+**鐥囩姸**锛?
 ```
 failed to calculate checksum: "/go.sum": not found
 ```
 
-**解决方案**：
-- Dockerfile 已修复：在构建阶段运行 `go mod tidy` 自动生成 go.sum
-- 如果本地需要，可运行：`cd api && go mod tidy` 和 `cd worker && go mod tidy`
+**瑙ｅ喅鏂规**锛?
+- Dockerfile 宸蹭慨澶嶏細鍦ㄦ瀯寤洪樁娈佃繍琛?`go mod tidy` 鑷姩鐢熸垚 go.sum
+- 濡傛灉鏈湴闇€瑕侊紝鍙繍琛岋細`cd api && go mod tidy` 鍜?`cd worker && go mod tidy`
 
-### 4. 构建失败：Go 编译错误
+### 4. 鏋勫缓澶辫触锛欸o 缂栬瘧閿欒
 
-**症状**：
+**鐥囩姸**锛?
 ```
 "time" imported and not used
 "os" imported and not used
 ```
 
-**解决方案**：
-- 已修复：移除了所有未使用的 import
-- 如果遇到类似问题，运行 `go vet ./...` 检查
+**瑙ｅ喅鏂规**锛?
+- 宸蹭慨澶嶏細绉婚櫎浜嗘墍鏈夋湭浣跨敤鐨?import
+- 濡傛灉閬囧埌绫讳技闂锛岃繍琛?`go vet ./...` 妫€鏌?
 
-### 5. TTS 服务启动失败：找不到 uvicorn
+### 5. TTS 鏈嶅姟鍚姩澶辫触锛氭壘涓嶅埌 uvicorn
 
-**症状**：
+**鐥囩姸**锛?
 ```
 exec: "uvicorn": executable file not found in $PATH
 ```
 
-**解决方案**：
-- Dockerfile 已修复：使用绝对路径 `/app/.venv/bin/uvicorn`
-- 确保 `docker-compose.yml` 中没有覆盖 `/app` 的 bind mount（会覆盖虚拟环境）
+**瑙ｅ喅鏂规**锛?
+- Dockerfile 宸蹭慨澶嶏細浣跨敤缁濆璺緞 `/app/.venv/bin/uvicorn`
+- 纭繚 `docker-compose.yml` 涓病鏈夎鐩?`/app` 鐨?bind mount锛堜細瑕嗙洊铏氭嫙鐜锛?
 
-### 6. TTS 健康检查失败：找不到 curl
+### 6. TTS 鍋ュ悍妫€鏌ュけ璐ワ細鎵句笉鍒?curl
 
-**症状**：
+**鐥囩姸**锛?
 ```
 exec: "curl": executable file not found in $PATH
 ```
 
-**解决方案**：
-- 已修复：健康检查改为使用 Python `urllib`，不依赖 curl
-- 检查 `docker-compose.yml` 中的 healthcheck 配置
+**瑙ｅ喅鏂规**锛?
+- 宸蹭慨澶嶏細鍋ュ悍妫€鏌ユ敼涓轰娇鐢?Python `urllib`锛屼笉渚濊禆 curl
+- 妫€鏌?`docker-compose.yml` 涓殑 healthcheck 閰嶇疆
 
-### 7. TTS 服务启动失败：缺少 MODELSCOPE_TOKEN
+### 7. TTS 鏈嶅姟鍚姩澶辫触锛氱己灏?MODELSCOPE_TOKEN
 
-**症状**：
+**鐥囩姸**锛?
 ```
 MODELSCOPE_TOKEN is required but not set
 ```
 
-**解决方案**：
-- 已修复：TTS 服务支持延迟加载，启动时不再强制要求 token
-- 可以通过前端设置页面配置 token，或设置环境变量 `MODELSCOPE_TOKEN`
+**瑙ｅ喅鏂规**锛?
+- 宸蹭慨澶嶏細TTS 鏈嶅姟鏀寔寤惰繜鍔犺浇锛屽惎鍔ㄦ椂涓嶅啀寮哄埗瑕佹眰 token
+- 鍙互閫氳繃鍓嶇璁剧疆椤甸潰閰嶇疆 token锛屾垨璁剧疆鐜鍙橀噺 `MODELSCOPE_TOKEN`
 
-### 8. Debian apt 源连接失败
+### 8. Debian apt 婧愯繛鎺ュけ璐?
 
-**症状**：
+**鐥囩姸**锛?
 ```
 Failed to fetch http://deb.debian.org/... Unable to connect
 ```
 
-**解决方案**：
-- Dockerfile 已修复：自动将 apt 源切换为 HTTPS
-- 如果仍有问题，检查网络连接或使用代理
+**瑙ｅ喅鏂规**锛?
+- Dockerfile 宸蹭慨澶嶏細鑷姩灏?apt 婧愬垏鎹负 HTTPS
+- 濡傛灉浠嶆湁闂锛屾鏌ョ綉缁滆繛鎺ユ垨浣跨敤浠ｇ悊
 
-## 验证服务运行
+## 楠岃瘉鏈嶅姟杩愯
 
-### 检查容器状态
+### 妫€鏌ュ鍣ㄧ姸鎬?
 
 ```bash
 docker compose ps
 ```
 
-所有服务应显示 `Up (healthy)` 状态。
+鎵€鏈夋湇鍔″簲鏄剧ず `Up (healthy)` 鐘舵€併€?
 
-### 检查服务日志
+### 妫€鏌ユ湇鍔℃棩蹇?
 
 ```bash
-# 查看所有服务日志
+# 鏌ョ湅鎵€鏈夋湇鍔℃棩蹇?
 docker compose logs -f
 
-# 查看特定服务日志
+# 鏌ョ湅鐗瑰畾鏈嶅姟鏃ュ織
 docker compose logs -f api
 docker compose logs -f worker
 docker compose logs -f tts_service
 ```
 
-### 测试 API 端点
+### 娴嬭瘯 API 绔偣
 
 ```bash
-# 测试 API 健康检查
+# 娴嬭瘯 API 鍋ュ悍妫€鏌?
 curl http://localhost:8080/health
 
-# 测试 TTS 健康检查
+# 娴嬭瘯 TTS 鍋ュ悍妫€鏌?
 curl http://localhost:8001/health
 ```
 
-## 停止服务
+## 鍋滄鏈嶅姟
 
 ```bash
-# 停止所有服务（保留数据）
+# 鍋滄鎵€鏈夋湇鍔★紙淇濈暀鏁版嵁锛?
 docker compose stop
 
-# 停止并删除容器（保留数据卷）
+# 鍋滄骞跺垹闄ゅ鍣紙淇濈暀鏁版嵁鍗凤級
 docker compose down
 
-# 停止并删除所有（包括数据卷）
+# 鍋滄骞跺垹闄ゆ墍鏈夛紙鍖呮嫭鏁版嵁鍗凤級
 docker compose down -v
 ```
 
-## 重启服务
+## 閲嶅惎鏈嶅姟
 
 ```bash
-# 重启所有服务
+# 閲嶅惎鎵€鏈夋湇鍔?
 docker compose restart
 
-# 重启特定服务
+# 閲嶅惎鐗瑰畾鏈嶅姟
 docker compose restart api
 docker compose restart worker
 ```
 
-## 更新代码后重新构建
+## 鏇存柊浠ｇ爜鍚庨噸鏂版瀯寤?
 
 ```bash
-# 重新构建并启动
+# 閲嶆柊鏋勫缓骞跺惎鍔?
 docker compose up -d --build
 
-# 仅重新构建特定服务
+# 浠呴噸鏂版瀯寤虹壒瀹氭湇鍔?
 docker compose up -d --build api
 docker compose up -d --build worker
 docker compose up -d --build tts_service
 ```
 
-## 开发模式
+## 寮€鍙戞ā寮?
 
-如果需要修改代码并实时生效，可以：
+濡傛灉闇€瑕佷慨鏀逛唬鐮佸苟瀹炴椂鐢熸晥锛屽彲浠ワ細
 
-1. **API/Worker（Go）**：
-   - 修改代码后重新构建：`docker compose up -d --build api`
-   - 或使用 bind mount（不推荐，可能覆盖构建产物）
+1. **API/Worker锛圙o锛?*锛?
+   - 淇敼浠ｇ爜鍚庨噸鏂版瀯寤猴細`docker compose up -d --build api`
+   - 鎴栦娇鐢?bind mount锛堜笉鎺ㄨ崘锛屽彲鑳借鐩栨瀯寤轰骇鐗╋級
 
-2. **TTS（Python）**：
-   - 修改代码后重新构建：`docker compose up -d --build tts_service`
-   - 或使用 bind mount（注意不要覆盖 `.venv`）
+2. **TTS锛圥ython锛?*锛?
+   - 淇敼浠ｇ爜鍚庨噸鏂版瀯寤猴細`docker compose up -d --build tts_service`
+   - 鎴栦娇鐢?bind mount锛堟敞鎰忎笉瑕佽鐩?`.venv`锛?
 
-## 故障排查
+## 鏁呴殰鎺掓煡
 
-### 查看容器详细信息
+### 鏌ョ湅瀹瑰櫒璇︾粏淇℃伅
 
 ```bash
 docker inspect video-dubbing-api
@@ -231,48 +230,48 @@ docker inspect video-dubbing-worker
 docker inspect video-dubbing-tts
 ```
 
-### 进入容器调试
+### 杩涘叆瀹瑰櫒璋冭瘯
 
 ```bash
-# 进入 API 容器
+# 杩涘叆 API 瀹瑰櫒
 docker exec -it video-dubbing-api sh
 
-# 进入 Worker 容器
+# 杩涘叆 Worker 瀹瑰櫒
 docker exec -it video-dubbing-worker sh
 
-# 进入 TTS 容器
+# 杩涘叆 TTS 瀹瑰櫒
 docker exec -it video-dubbing-tts bash
 ```
 
-### 检查网络连接
+### 妫€鏌ョ綉缁滆繛鎺?
 
 ```bash
-# 查看 Docker 网络
+# 鏌ョ湅 Docker 缃戠粶
 docker network ls
 docker network inspect vedio_dubbing-network
 ```
 
-### 检查数据卷
+### 妫€鏌ユ暟鎹嵎
 
 ```bash
-# 查看数据卷
+# 鏌ョ湅鏁版嵁鍗?
 docker volume ls
 docker volume inspect vedio_postgres_data
 docker volume inspect vedio_minio_data
 ```
 
-## 性能优化
+## 鎬ц兘浼樺寲
 
-### 扩展 Worker 实例
+### 鎵╁睍 Worker 瀹炰緥
 
 ```bash
-# 启动 3 个 worker 实例
+# 鍚姩 3 涓?worker 瀹炰緥
 docker compose up -d --scale worker=3
 ```
 
-### 资源限制
+### 璧勬簮闄愬埗
 
-在 `docker-compose.yml` 中为服务添加资源限制：
+鍦?`docker-compose.yml` 涓负鏈嶅姟娣诲姞璧勬簮闄愬埗锛?
 
 ```yaml
 services:
@@ -287,27 +286,28 @@ services:
           memory: 256M
 ```
 
-## 安全建议
+## 瀹夊叏寤鸿
 
-1. **生产环境**：
-   - 修改所有默认密码
-   - 使用环境变量文件（`.env`）管理敏感信息
-   - 启用 HTTPS（配置 SSL 证书）
-   - 限制端口暴露（仅暴露必要的端口）
+1. **鐢熶骇鐜**锛?
+   - 淇敼鎵€鏈夐粯璁ゅ瘑鐮?
+   - 浣跨敤鐜鍙橀噺鏂囦欢锛坄.env`锛夌鐞嗘晱鎰熶俊鎭?
+   - 鍚敤 HTTPS锛堥厤缃?SSL 璇佷功锛?
+   - 闄愬埗绔彛鏆撮湶锛堜粎鏆撮湶蹇呰鐨勭鍙ｏ級
 
-2. **API Key 管理**：
-   - 当前 MVP 阶段：API Key 存储在数据库（明文）
-   - 生产环境：应加密存储或使用密钥管理服务
+2. **API Key 绠＄悊**锛?
+   - 褰撳墠 MVP 闃舵锛欰PI Key 瀛樺偍鍦ㄦ暟鎹簱锛堟槑鏂囷級
+   - 鐢熶骇鐜锛氬簲鍔犲瘑瀛樺偍鎴栦娇鐢ㄥ瘑閽ョ鐞嗘湇鍔?
 
-3. **网络隔离**：
-   - 使用 Docker 网络隔离服务
-   - 仅网关服务暴露到公网
-   - 内部服务通过服务名通信
+3. **缃戠粶闅旂**锛?
+   - 浣跨敤 Docker 缃戠粶闅旂鏈嶅姟
+   - 浠呯綉鍏虫湇鍔℃毚闇插埌鍏綉
+   - 鍐呴儴鏈嶅姟閫氳繃鏈嶅姟鍚嶉€氫俊
 
-## 相关文档
+## 鐩稿叧鏂囨。
 
-- [部署指南](deployment.md)
-- [架构文档](architecture.md)
-- [API 接口文档](api-contracts.md)
-- [TTS 服务文档](tts-service.md)
+- [閮ㄧ讲鎸囧崡](deployment.md)
+- [鏋舵瀯鏂囨。](architecture.md)
+- [API 鎺ュ彛鏂囨。](api-contracts.md)
+- [ASR 服务文档](asr-service.md)
+- [TTS 鏈嶅姟鏂囨。](tts-service.md)
 

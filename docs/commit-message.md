@@ -203,7 +203,7 @@ docs: 更新部署文档
 
 实现语音识别步骤
 
-实现 asr worker 步骤，调用火山引擎 ASR API。
+实现 asr worker 步骤，调用 Moonshine ASR 服务。
 
 测试说明：集成测试验证 ASR 调用。
 ```

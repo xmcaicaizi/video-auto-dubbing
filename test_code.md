@@ -144,7 +144,7 @@
    - 模型路径：`./models/index_tts2`
 
 2. **外部 API 配置**
-   - 火山引擎 ASR API 密钥需要配置
+   - Moonshine ASR 服务需要配置
    - GLM 翻译 API 密钥需要配置
 
 3. **Worker 服务**

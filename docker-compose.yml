@@ -85,13 +85,13 @@ services:
       # RabbitMQ 配置
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-rabbitmq}:${RABBITMQ_PASSWORD:-rabbitmq123}@rabbitmq:5672/
       # 外部 API 配置
-      VOLCENGINE_ASR_ACCESS_KEY: ${VOLCENGINE_ASR_ACCESS_KEY}
-      VOLCENGINE_ASR_SECRET_KEY: ${VOLCENGINE_ASR_SECRET_KEY}
       GLM_API_KEY: ${GLM_API_KEY}
       GLM_API_URL: ${GLM_API_URL:-https://open.bigmodel.cn/api/paas/v4/chat/completions}
       GLM_MODEL: ${GLM_MODEL:-glm-4.5}
       # TTS 服务配置
       TTS_SERVICE_URL: http://tts_service:8000
+      # ASR 服务配置
+      ASR_SERVICE_URL: http://asr_service:8002
       # 服务配置
       API_PORT: 8080
       API_HOST: 0.0.0.0
@@ -132,11 +132,11 @@ services:
       # RabbitMQ 配置
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-rabbitmq}:${RABBITMQ_PASSWORD:-rabbitmq123}@rabbitmq:5672/
       # 外部 API 配置
-      VOLCENGINE_ASR_ACCESS_KEY: ${VOLCENGINE_ASR_ACCESS_KEY}
-      VOLCENGINE_ASR_SECRET_KEY: ${VOLCENGINE_ASR_SECRET_KEY}
       GLM_API_KEY: ${GLM_API_KEY}
       GLM_API_URL: ${GLM_API_URL:-https://open.bigmodel.cn/api/paas/v4/chat/completions}
       GLM_MODEL: ${GLM_MODEL:-glm-4.5}
+      # ASR 服务配置
+      ASR_SERVICE_URL: http://asr_service:8002
       # TTS 服务配置
       TTS_SERVICE_URL: http://tts_service:8000
       # FFmpeg 配置
@@ -148,6 +148,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      asr_service:
+        condition: service_healthy
       tts_service:
         condition: service_healthy
     volumes:
@@ -157,6 +159,35 @@ services:
     restart: unless-stopped
     # 注意：可以通过 scale 命令扩展多个 worker 实例
     # docker compose up --scale worker=3
+
+  # ASR 服务（Python + Moonshine）
+  asr_service:
+    build:
+      context: ./asr_service
+      dockerfile: Dockerfile
+    container_name: video-dubbing-asr
+    environment:
+      ASR_HOST: 0.0.0.0
+      ASR_PORT: 8002
+      ASR_MODEL_ID: ${ASR_MODEL_ID:-moonshine-base}
+      ASR_DEVICE: ${ASR_DEVICE:-cuda}
+      ASR_COMPUTE_TYPE: ${ASR_COMPUTE_TYPE:-float16}
+      ASR_BACKEND: ${ASR_BACKEND:-moonshine}
+      TARGET_SAMPLE_RATE: 16000
+      AUDIO_TEMP_DIR: /app/temp/audio
+    ports:
+      - "${ASR_PORT:-8002}:8002"
+    volumes:
+      - asr_models:/app/models
+      - asr_temp:/app/temp
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health').read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - dubbing-network
+    restart: unless-stopped
 
   # TTS 服务（Python）
   tts_service:
@@ -227,6 +258,10 @@ volumes:
   tts_models:
     driver: local
   tts_temp:
+    driver: local
+  asr_models:
+    driver: local
+  asr_temp:
     driver: local
 
 networks:

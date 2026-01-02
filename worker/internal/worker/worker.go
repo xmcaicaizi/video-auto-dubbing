@@ -40,7 +40,7 @@ type Worker struct {
 
 // New creates a new worker.
 func New(db *database.DB, storage *storage.Service, publisher *queue.Publisher, cfg *config.Config, logger *zap.Logger) *Worker {
-	asrClient := asr.NewClient(cfg.External.VolcEngineASR, logger)
+	asrClient := asr.NewClient(cfg.External.ASR, logger)
 	transClient := translate.NewClient(cfg.External.GLM, logger)
 	ttsClient := tts.NewClient(cfg.TTS, logger)
 	

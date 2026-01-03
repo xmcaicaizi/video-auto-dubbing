@@ -44,7 +44,7 @@ func main() {
 	logger.Info("Database connected successfully")
 
 	// Initialize MinIO client
-	minioClient, err := minio.New(cfg.MinIO)
+	minioClient, err := minio.New(cfg.MinIO, minio.WithExistingBucketOnly())
 	if err != nil {
 		logger.Fatal("Failed to initialize MinIO client", zap.Error(err))
 	}
@@ -52,11 +52,7 @@ func main() {
 	logger.Info("MinIO client initialized successfully")
 
 	// Initialize storage service
-	publicEndpoint := cfg.MinIO.PublicEndpoint
-	if publicEndpoint == "" {
-		publicEndpoint = cfg.MinIO.Endpoint
-	}
-	storageService := storage.New(minioClient, cfg.MinIO.Bucket, publicEndpoint)
+	storageService := storage.New(minioClient, storage.WithHostOverride(cfg.MinIO.PublicEndpoint))
 
 	// Initialize RabbitMQ connection
 	queueConn, err := queue.NewConnection(cfg.RabbitMQ)
@@ -101,4 +97,3 @@ func main() {
 	time.Sleep(5 * time.Second)
 	logger.Info("Worker service exited")
 }
-

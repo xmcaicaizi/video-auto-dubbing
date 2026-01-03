@@ -18,8 +18,8 @@ import (
 
 // TaskService handles task business logic.
 type TaskService struct {
-	db      *database.DB
-	storage *storage.Service
+	db        *database.DB
+	storage   *storage.Service
 	publisher *queue.Publisher
 }
 
@@ -78,12 +78,12 @@ func (s *TaskService) CreateTask(ctx context.Context, file *multipart.FileHeader
 
 	// Create task record
 	task := &models.Task{
-		ID:             taskID,
-		Status:         models.TaskStatusCreated,
-		Progress:       0,
-		SourceVideoKey: videoKey,
-		SourceLanguage: sourceLang,
-		TargetLanguage: targetLang,
+		ID:              taskID,
+		Status:          models.TaskStatusCreated,
+		Progress:        0,
+		SourceVideoKey:  videoKey,
+		SourceLanguage:  sourceLang,
+		TargetLanguage:  targetLang,
 		ASRAppID:        nil,
 		ASRToken:        nil,
 		ASRCluster:      nil,
@@ -91,8 +91,8 @@ func (s *TaskService) CreateTask(ctx context.Context, file *multipart.FileHeader
 		GLMAPIURL:       nil,
 		GLMModel:        nil,
 		ModelScopeToken: nil,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
 	}
 
 	query := `
@@ -126,14 +126,14 @@ func (s *TaskService) CreateTask(ctx context.Context, file *multipart.FileHeader
 
 	// Publish extract_audio task
 	extractAudioMsg := map[string]interface{}{
-		"task_id":          taskID.String(),
-		"step":             "extract_audio",
-		"attempt":          1,
-		"trace_id":         uuid.New().String(),
-		"created_at":       time.Now().Format(time.RFC3339),
+		"task_id":    taskID.String(),
+		"step":       "extract_audio",
+		"attempt":    1,
+		"trace_id":   uuid.New().String(),
+		"created_at": time.Now().Format(time.RFC3339),
 		"payload": map[string]interface{}{
-			"source_video_key":  videoKey,
-			"output_audio_key":  fmt.Sprintf("audios/%s/source.wav", taskID),
+			"source_video_key": videoKey,
+			"output_audio_key": fmt.Sprintf("audios/%s/source.wav", taskID),
 		},
 	}
 	if err := s.publisher.Publish(ctx, "task.extract_audio", extractAudioMsg); err != nil {
@@ -288,7 +288,7 @@ func (s *TaskService) GetDownloadURL(ctx context.Context, taskID uuid.UUID, down
 		return "", fmt.Errorf("invalid download type: %s", downloadType)
 	}
 
-	url, err := s.storage.PresignedGetURL(ctx, key, 3600)
+	url, err := s.storage.PresignedGetURL(ctx, key, time.Hour)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate presigned URL: %w", err)
 	}
@@ -363,4 +363,3 @@ func (s *TaskService) DeleteTask(ctx context.Context, taskID uuid.UUID) error {
 
 	return nil
 }
-

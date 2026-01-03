@@ -5,6 +5,7 @@ import (
 
 	"vedio/api/internal/database"
 	"vedio/api/internal/handlers"
+	"vedio/api/internal/orchestrator"
 	"vedio/api/internal/queue"
 	"vedio/api/internal/service"
 	"vedio/api/internal/storage"
@@ -34,7 +35,9 @@ func New(db *database.DB, storage *storage.Service, publisher *queue.Publisher, 
 	v1 := r.Group("/api/v1")
 	{
 		// Initialize services
-		taskService := service.NewTaskService(db, storage, publisher)
+		taskRepo := orchestrator.NewDBTaskRepository(db)
+		taskOrchestrator := orchestrator.NewTaskOrchestrator(publisher, taskRepo)
+		taskService := service.NewTaskService(db, storage, taskOrchestrator)
 		taskHandler := handlers.NewTaskHandler(taskService, logger)
 
 		// Task routes
@@ -99,4 +102,3 @@ func corsMiddleware() gin.HandlerFunc {
 		c.Next()
 	}
 }
-

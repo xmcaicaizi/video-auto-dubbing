@@ -28,18 +28,17 @@
 **技术栈：** Go + Gin/Echo
 
 #### 1.2.2 编排服务（orchestrator/）
-**决策：与 API 服务合并**
+**决策：与 API 服务合并，但以独立包存在**
 
-**理由：**
-- 毕业设计阶段，任务编排逻辑相对简单
-- 减少服务间通信复杂度
-- 降低部署和维护成本
-- 后续可轻松拆分为独立服务
+**现状与职责边界：**
+- `api/internal/orchestrator` 暴露 `TaskOrchestrator`、`QueuePublisher`、`TaskRepository` 接口，默认实现 `DefaultTaskOrchestrator`
+- API 层只负责入参校验、文件上传、持久化初始任务记录，再通过接口调用 orchestrator 启动状态机
+- Orchestrator 负责任务状态机入口、步骤依赖与消息投递（当前第一跳为 `extract_audio`），并通过 `TaskRepository` 更新任务状态
+- 通过接口解耦后，可将 orchestrator 抽离为独立进程或扩展更多状态（重试、暂停、取消）而无需修改 API handler
 
-**合并后的职责：**
-- 在 API 服务内部实现任务状态机
-- 根据任务状态投递队列消息
-- 管理任务步骤依赖关系（DAG）
+**后续可拆分路径：**
+- 替换 `QueuePublisher` 实现为 RPC/HTTP 客户端，将编排逻辑迁移到独立服务
+- 扩展 `TaskRepository` 接口以支持乐观锁、审计日志等高级特性
 
 #### 1.2.3 Worker 服务（worker/）
 **职责：**
@@ -135,4 +134,3 @@ sequenceDiagram
     Web->>API: GET /tasks/:id
     API->>Web: 返回任务状态和结果
 ```
-

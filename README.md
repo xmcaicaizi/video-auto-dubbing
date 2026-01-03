@@ -1,5 +1,7 @@
 # 视频本地化自动配音系统
 
+> 更新日期：2026-01-03｜适用版本：main 分支
+
 
 
 面向视频本地化的自动配音系统，通过结合先进的语音识别、机器翻译与可控语音合成技术，实现视频中对白的自动识别、跨语言翻译和目标语种配音。
@@ -74,129 +76,14 @@
 
 
 
-## 快速开始
+## 快速开始（权威入口）
 
+完整、去重的步骤请阅读 [`docs/startup-guide.md`](docs/startup-guide.md)（唯一权威的快速启动指南）。概要流程如下：
 
-
-### 前置要求
-
-
-
-- Docker Engine 20.10+
-
-- Docker Compose 2.0+
-
-- 至少 8GB 可用内存
-
-- 至少 50GB 可用磁盘空间
-
-
-
-### 部署步骤
-
-
-
-1. **克隆项目**
-
-```bash
-
-git clone <repository-url>
-
-cd vedio
-
-```
-
-
-
-2. **配置环境变量**
-
-```bash
-
-# 创建环境变量文件（如果不存在）
-
-# 设置必要的配置，特别是外部 API 密钥：
-
-# - GLM_API_KEY: 智谱 GLM 翻译 API Key（推荐通过前端设置）
-
-# - GLM_API_URL: GLM API 地址（默认 https://open.bigmodel.cn/api/paas/v4/chat/completions）
-
-# - GLM_MODEL: GLM 模型名（默认 glm-4.5）
-
-# - MODELSCOPE_TOKEN: ModelScope API 访问令牌（推荐通过前端设置）
-
-# - ASR_SERVICE_URL: Moonshine ASR 服务地址（默认 http://localhost:8002）
-
-# - ASR_MODEL_ID: Moonshine 模型 ID（默认 moonshine-base）
-
-# - ASR_DEVICE: 运行设备（默认 cuda）
-
-# - ASR_COMPUTE_TYPE: 推理精度（默认 float16）
-
-# - ASR_BACKEND: ASR 后端（默认 moonshine）
-
-# - MINIO_PUBLIC_ENDPOINT: MinIO 外部可访问地址（ASR 服务不在同一网络时使用）
-
-```
-
-
-
-**重要**: 
-
-- **推荐方式**：在前端"设置"页面输入 API Key，系统会随任务保存并使用。环境变量仅作为后备。
-
-- API Key 获取方式：
-
-  - Moonshine ASR: 使用本地 Python 服务，无需外部 API Key
-
-  - 智谱 GLM: 登录 [智谱 AI 开放平台](https://open.bigmodel.cn/) 获取 API Key
-
-  - ModelScope: 登录 [ModelScope 官网](https://modelscope.cn)，在个人设置中生成 API Token
-
-- **MINIO_PUBLIC_ENDPOINT**: 若 ASR 服务不在同一网络，可配置可访问的 MinIO 地址（如 minio.example.com:9000）
-
-
-
-> 说明：本仓库提供 `env.example` 作为环境变量示例（部分环境会限制使用 dotfile，例如 `.env.example`）。你可以将 `env.example` 复制为 `.env`（如环境支持），或按需导入为系统环境变量。
-
-
-
-3. **启动服务**
-
-```bash
-
-docker compose up -d
-
-```
-
-
-
-4. **查看服务状态**
-
-```bash
-
-docker compose ps
-
-```
-
-
-
-5. **查看日志**
-
-```bash
-
-docker compose logs -f
-
-```
-
-
-
-### 服务访问
-
-
-
-- **API 服务**: http://localhost:8080
-
-- **TTS 服务**: http://localhost:8000
+1. 安装 Docker Engine 20.10+ 与 Docker Compose 2.0+，预留 8GB 内存 / 50GB 磁盘。
+2. 克隆仓库并进入目录：`git clone <repository-url> && cd vedio`。
+3. （可选）根据 `env.example` 配置 API Key、模型与存储等环境变量。
+4. 启动并验证：`docker compose up -d && docker compose ps`，前端访问 `http://localhost`，API 健康检查 `http://localhost:8080/health`。
 
 - **MinIO 控制台**: http://localhost:9001
 

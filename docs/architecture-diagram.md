@@ -1,4 +1,8 @@
-# 系统架构图
+# 架构补充图示
+
+> 更新日期：2026-01-03｜适用版本：main 分支
+
+本文件提供系统架构的补充可视化图示。完整的文字说明与权威流程示意请参见 `architecture.md`。
 
 ## 整体架构图
 
@@ -72,62 +76,6 @@ graph TB
     WorkerN -->|调用| TTS_Service
 
     TTS_Service -->|模型文件| MinIO
-```
-
-## 任务处理流程图
-
-```mermaid
-sequenceDiagram
-    participant User as 用户
-    participant API as API 服务
-    participant DB as PostgreSQL
-    participant Storage as MinIO
-    participant Queue as RabbitMQ
-    participant Worker as Worker
-    participant ASR as Moonshine ASR
-    participant GLM as GLM API
-    participant TTS as TTS 服务
-
-    User->>API: POST /tasks (上传视频)
-    API->>DB: 创建 task 记录
-    API->>Storage: 保存视频文件
-    API->>Queue: 投递 extract_audio 任务
-    API->>User: 返回 task_id
-
-    Queue->>Worker: 消费 extract_audio
-    Worker->>Storage: 提取音频
-    Worker->>DB: 更新步骤状态
-    Worker->>Queue: 投递 asr 任务
-
-    Queue->>Worker: 消费 asr
-    Worker->>ASR: 调用 ASR 服务
-    ASR->>Worker: 返回识别结果
-    Worker->>Storage: 保存 ASR 结果
-    Worker->>DB: 保存 segments
-    Worker->>Queue: 投递 translate 任务
-
-    Queue->>Worker: 消费 translate
-    Worker->>DB: 读取 segments
-    Worker->>GLM: 调用翻译 API
-    GLM->>Worker: 返回翻译结果
-    Worker->>DB: 更新 segments.mt_text
-    Worker->>Queue: 投递 tts 任务
-
-    Queue->>Worker: 消费 tts
-    Worker->>DB: 读取 segment 信息
-    Worker->>TTS: POST /synthesize
-    TTS->>Worker: 返回音频
-    Worker->>Storage: 保存 TTS 音频
-    Worker->>DB: 更新 segment.tts_audio_key
-    Worker->>Queue: 投递 mux_video 任务
-
-    Queue->>Worker: 消费 mux_video
-    Worker->>Storage: 合成最终视频
-    Worker->>DB: 标记任务完成
-
-    User->>API: GET /tasks/:id
-    API->>DB: 查询任务状态
-    API->>User: 返回任务结果
 ```
 
 ## 数据流图
@@ -236,4 +184,3 @@ stateDiagram-v2
         - mux_video
     end note
 ```
-

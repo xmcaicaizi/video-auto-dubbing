@@ -1,30 +1,14 @@
 package queue
 
 import (
-	"fmt"
-
 	"vedio/api/internal/config"
-
-	amqp "github.com/rabbitmq/amqp091-go"
+	sharedqueue "vedio/shared/queue"
 )
 
-// Connection wraps the RabbitMQ connection.
-type Connection struct {
-	*amqp.Connection
-}
+// Connection is an alias to the shared RabbitMQ connection.
+type Connection = sharedqueue.Connection
 
-// NewConnection creates a new RabbitMQ connection.
+// NewConnection creates a new RabbitMQ connection using the shared implementation.
 func NewConnection(cfg config.RabbitMQConfig) (*Connection, error) {
-	conn, err := amqp.Dial(cfg.URL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to RabbitMQ: %w", err)
-	}
-
-	return &Connection{conn}, nil
+	return sharedqueue.NewConnection(cfg)
 }
-
-// Close closes the RabbitMQ connection.
-func (c *Connection) Close() error {
-	return c.Connection.Close()
-}
-

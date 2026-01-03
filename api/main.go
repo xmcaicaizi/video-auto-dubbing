@@ -54,7 +54,7 @@ func main() {
 	logger.Info("MinIO client initialized successfully")
 
 	// Initialize storage service
-	storageService := storage.New(minioClient, cfg.MinIO.Bucket)
+	storageService := storage.New(minioClient)
 
 	// Initialize RabbitMQ connection
 	queueConn, err := queue.NewConnection(cfg.RabbitMQ)
@@ -105,4 +105,3 @@ func main() {
 
 	logger.Info("Server exited")
 }
-

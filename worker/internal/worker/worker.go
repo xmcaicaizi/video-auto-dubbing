@@ -14,9 +14,10 @@ import (
 	"vedio/worker/internal/storage"
 	"vedio/worker/internal/translate"
 	"vedio/worker/internal/tts"
+	"vedio/worker/internal/worker/steps"
 
-	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/google/uuid"
+	amqp "github.com/rabbitmq/amqp091-go"
 	"go.uber.org/zap"
 )
 
@@ -26,25 +27,32 @@ const (
 	maxRetries   = 3
 )
 
+// Publisher describes the minimal publishing behaviour Worker needs.
+type Publisher interface {
+	Publish(ctx context.Context, routingKey string, message interface{}) error
+	Conn() *queue.Connection
+}
+
 // Worker handles task processing.
 type Worker struct {
-	db         *database.DB
-	storage    *storage.Service
-	publisher  *queue.Publisher
-	config     *config.Config
-	logger     *zap.Logger
-	asrClient  *asr.Client
+	db          *database.DB
+	storage     *storage.Service
+	publisher   Publisher
+	config      *config.Config
+	logger      *zap.Logger
+	asrClient   *asr.Client
 	transClient *translate.Client
-	ttsClient  *tts.Client
+	ttsClient   *tts.Client
+	registry    *ProcessorRegistry
 }
 
 // New creates a new worker.
-func New(db *database.DB, storage *storage.Service, publisher *queue.Publisher, cfg *config.Config, logger *zap.Logger) *Worker {
+func New(db *database.DB, storage *storage.Service, publisher Publisher, cfg *config.Config, logger *zap.Logger) *Worker {
 	asrClient := asr.NewClient(cfg.External.ASR, logger)
 	transClient := translate.NewClient(cfg.External.GLM, logger)
 	ttsClient := tts.NewClient(cfg.TTS, logger)
-	
-	return &Worker{
+
+	w := &Worker{
 		db:          db,
 		storage:     storage,
 		publisher:   publisher,
@@ -54,10 +62,42 @@ func New(db *database.DB, storage *storage.Service, publisher *queue.Publisher, 
 		transClient: transClient,
 		ttsClient:   ttsClient,
 	}
+
+	w.registry = NewProcessorRegistry()
+	w.registerDefaultProcessors()
+
+	return w
 }
 
-// StartConsumer starts consuming messages for a specific step.
+func (w *Worker) registerDefaultProcessors() {
+	deps := w.buildDeps()
+	w.registry.Register(steps.NewExtractAudioProcessor(deps))
+	w.registry.Register(steps.NewASRProcessor(deps))
+	w.registry.Register(steps.NewTranslateProcessor(deps))
+	w.registry.Register(steps.NewTTSProcessor(deps))
+	w.registry.Register(steps.NewMuxVideoProcessor(deps))
+}
+
+func (w *Worker) buildDeps() steps.Deps {
+	return steps.Deps{
+		DB:        w.db,
+		Storage:   w.storage,
+		Publisher: w.publisher,
+		Config:    w.config,
+		Logger:    w.logger,
+
+		ASRClient: w.asrClient,
+		TTSClient: w.ttsClient,
+	}
+}
+
+// StartConsumer starts consuming messages for a specific registered step.
 func (w *Worker) StartConsumer(ctx context.Context, step string) error {
+	processor, ok := w.registry.Get(step)
+	if !ok {
+		return fmt.Errorf("no processor registered for step: %s", step)
+	}
+
 	conn := w.publisher.Conn()
 	ch, err := conn.Channel()
 	if err != nil {
@@ -136,7 +176,7 @@ func (w *Worker) StartConsumer(ctx context.Context, step string) error {
 				return fmt.Errorf("consumer channel closed")
 			}
 
-			if err := w.processMessage(ctx, step, msg); err != nil {
+			if err := w.processMessage(ctx, processor, msg); err != nil {
 				w.logger.Error("Failed to process message",
 					zap.String("step", step),
 					zap.Error(err),
@@ -152,17 +192,43 @@ func (w *Worker) StartConsumer(ctx context.Context, step string) error {
 	}
 }
 
-// processMessage processes a single message.
-func (w *Worker) processMessage(ctx context.Context, step string, msg amqp.Delivery) error {
+// StartAllConsumers starts consumers for all registered processors.
+func (w *Worker) StartAllConsumers(ctx context.Context) {
+	for _, step := range w.registry.Names() {
+		go func(stepName string) {
+			if err := w.StartConsumer(ctx, stepName); err != nil {
+				w.logger.Error("Consumer failed", zap.String("step", stepName), zap.Error(err))
+			}
+		}(step)
+	}
+}
+
+// processMessage processes a single message using the registered processor.
+func (w *Worker) processMessage(ctx context.Context, processor StepProcessor, msg amqp.Delivery) error {
+	taskMsg, taskID, err := decodeTaskMessage(msg.Body)
+	if err != nil {
+		return err
+	}
+
+	return w.runStepWithStatus(ctx, processor, taskID, taskMsg)
+}
+
+func decodeTaskMessage(body []byte) (models.TaskMessage, uuid.UUID, error) {
 	var taskMsg models.TaskMessage
-	if err := json.Unmarshal(msg.Body, &taskMsg); err != nil {
-		return fmt.Errorf("failed to unmarshal message: %w", err)
+	if err := json.Unmarshal(body, &taskMsg); err != nil {
+		return models.TaskMessage{}, uuid.Nil, fmt.Errorf("failed to unmarshal message: %w", err)
 	}
 
 	taskID, err := uuid.Parse(taskMsg.TaskID)
 	if err != nil {
-		return fmt.Errorf("invalid task_id: %w", err)
+		return models.TaskMessage{}, uuid.Nil, fmt.Errorf("invalid task_id: %w", err)
 	}
+
+	return taskMsg, taskID, nil
+}
+
+func (w *Worker) runStepWithStatus(ctx context.Context, processor StepProcessor, taskID uuid.UUID, taskMsg models.TaskMessage) error {
+	step := processor.Name()
 
 	w.logger.Info("Processing message",
 		zap.String("step", step),
@@ -188,23 +254,7 @@ func (w *Worker) processMessage(ctx context.Context, step string, msg amqp.Deliv
 
 	// Process the step
 	startTime := time.Now()
-	var processErr error
-
-	switch step {
-	case "extract_audio":
-		processErr = w.processExtractAudio(ctx, taskID, taskMsg)
-	case "asr":
-		processErr = w.processASR(ctx, taskID, taskMsg)
-	case "translate":
-		processErr = w.processTranslate(ctx, taskID, taskMsg)
-	case "tts":
-		processErr = w.processTTS(ctx, taskID, taskMsg)
-	case "mux_video":
-		processErr = w.processMuxVideo(ctx, taskID, taskMsg)
-	default:
-		processErr = fmt.Errorf("unknown step: %s", step)
-	}
-
+	processErr := processor.Process(ctx, taskID, taskMsg)
 	duration := time.Since(startTime)
 
 	if processErr != nil {
@@ -343,4 +393,3 @@ func (w *Worker) retryMessage(ctx context.Context, msg models.TaskMessage, step 
 	routingKey := fmt.Sprintf("task.%s", step)
 	return w.publisher.Publish(ctx, routingKey, msg)
 }
-

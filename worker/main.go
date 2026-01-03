@@ -77,15 +77,8 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Start consumer for each step
-	steps := []string{"extract_audio", "asr", "translate", "tts", "mux_video"}
-	for _, step := range steps {
-		go func(stepName string) {
-			if err := w.StartConsumer(ctx, stepName); err != nil {
-				logger.Error("Consumer failed", zap.String("step", stepName), zap.Error(err))
-			}
-		}(step)
-	}
+	// Start consumer for each registered step
+	w.StartAllConsumers(ctx)
 
 	logger.Info("All workers started")
 
@@ -101,4 +94,3 @@ func main() {
 	time.Sleep(5 * time.Second)
 	logger.Info("Worker service exited")
 }
-

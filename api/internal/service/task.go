@@ -10,7 +10,7 @@ import (
 
 	"vedio/api/internal/database"
 	"vedio/api/internal/models"
-	"vedio/api/internal/queue"
+	"vedio/api/internal/orchestrator"
 	"vedio/api/internal/storage"
 
 	"github.com/google/uuid"
@@ -44,11 +44,11 @@ func toNullString(s string) sql.NullString {
 }
 
 // NewTaskService creates a new task service.
-func NewTaskService(db *database.DB, storage *storage.Service, publisher *queue.Publisher) *TaskService {
+func NewTaskService(db *database.DB, storage *storage.Service, orchestrator orchestrator.TaskOrchestrator) *TaskService {
 	return &TaskService{
-		db:        db,
-		storage:   storage,
-		publisher: publisher,
+		db:           db,
+		storage:      storage,
+		orchestrator: orchestrator,
 	}
 }
 

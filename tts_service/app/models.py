@@ -100,6 +100,9 @@ class HealthResponse(BaseModel):
 
     status: str = Field(description="Service status")
     model_loaded: bool = Field(description="Whether the model is loaded")
+    backend: str = Field(description="Active TTS backend")
+    index_tts2_loaded: bool = Field(description="Whether IndexTTS2 is loaded")
+    message: str = Field(description="Additional health information")
 
 
 class ErrorResponse(BaseModel):
@@ -108,4 +111,3 @@ class ErrorResponse(BaseModel):
     error: str = Field(description="Error code")
     message: str = Field(description="Human readable error message")
     details: dict = Field(default_factory=dict, description="Additional error details")
-

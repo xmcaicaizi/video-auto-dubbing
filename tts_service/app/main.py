@@ -211,8 +211,16 @@ async def rate_limit_error_handler(request: Request, exc: RateLimitError):
 async def health_check():
     """Health check endpoint."""
     model_loaded = synthesizer.is_model_loaded()
+    index_tts2_loaded = synthesizer.is_index_tts_loaded()
     status = "healthy" if model_loaded else "degraded"
-    return HealthResponse(status=status, model_loaded=model_loaded)
+    message = "IndexTTS2 已加载" if index_tts2_loaded else "IndexTTS2 未加载"
+    return HealthResponse(
+        status=status,
+        model_loaded=model_loaded,
+        backend=settings.tts_backend,
+        index_tts2_loaded=index_tts2_loaded,
+        message=message,
+    )
 
 
 @app.post("/synthesize", response_model=SynthesisResponse)
@@ -449,4 +457,3 @@ if __name__ == "__main__":
         port=settings.tts_port,
         reload=True,
     )
-

@@ -35,7 +35,10 @@ class TTSSynthesizer:
         self._index_tts = None
         self._index_tts_lock = threading.Lock()
         self._model_loaded = False  # indicates at least one pipeline is ready (or mock mode)
+        self._index_tts_loaded = False
         self._executor: Optional[ThreadPoolExecutor] = None
+        self._prompt_cache: Dict[str, Path] = {}
+        self._prompt_cache_lock = threading.Lock()
         if settings.max_concurrent_requests > 0:
             self._executor = ThreadPoolExecutor(max_workers=settings.max_concurrent_requests)
 
@@ -48,6 +51,7 @@ class TTSSynthesizer:
         """
         if self._model_loaded:
             logger.info("Model already loaded")
+            self._index_tts_loaded = self._index_tts is not None or self._index_tts_loaded
             return
 
         # Check backend mode
@@ -56,10 +60,14 @@ class TTSSynthesizer:
             self._model_loaded = True
             return
 
+        if settings.tts_backend not in {"index_tts2", "modelscope"}:
+            raise ModelNotLoadedError(f"Unsupported TTS backend: {settings.tts_backend}")
+
         if settings.tts_backend == "index_tts2":
             try:
                 self._load_index_tts()
                 self._model_loaded = True
+                self._index_tts_loaded = True
                 logger.info("IndexTTS2 model loaded successfully")
                 return
             except Exception as e:
@@ -107,6 +115,10 @@ class TTSSynthesizer:
             True if model is loaded, False otherwise.
         """
         return self._model_loaded
+
+    def is_index_tts_loaded(self) -> bool:
+        """Check if IndexTTS2 is loaded."""
+        return self._index_tts is not None or self._index_tts_loaded
 
     def _get_pipeline(self, token: str):
         """Get or create a ModelScope pipeline for a specific token."""
@@ -156,6 +168,7 @@ class TTSSynthesizer:
                 use_cuda_kernel=settings.indextts_use_cuda_kernel,
                 use_torch_compile=settings.indextts_use_torch_compile,
             )
+            self._index_tts_loaded = True
 
     def _call_index_tts(
         self,
@@ -167,26 +180,7 @@ class TTSSynthesizer:
         if self._index_tts is None:
             raise ModelNotLoadedError("IndexTTS2 model is not loaded")
 
-        prompt_path = Path(prompt_audio)
-        temp_prompt_path = None
-        if prompt_audio.startswith("http://") or prompt_audio.startswith("https://"):
-            import requests
-
-            with tempfile.NamedTemporaryFile(
-                suffix=".wav",
-                delete=False,
-                dir=settings.audio_temp_dir,
-            ) as tmp_prompt:
-                temp_prompt_path = tmp_prompt.name
-            try:
-                resp = requests.get(prompt_audio, timeout=30)
-                resp.raise_for_status()
-                Path(temp_prompt_path).write_bytes(resp.content)
-                prompt_path = Path(temp_prompt_path)
-            except Exception as e:
-                raise SynthesisError(f"Failed to download prompt audio: {e}") from e
-        elif not prompt_path.exists():
-            raise ModelNotLoadedError(f"IndexTTS2 prompt audio not found: {prompt_audio}")
+        prompt_path = self._prepare_prompt_audio(prompt_audio)
 
         with tempfile.NamedTemporaryFile(
             suffix=".wav",
@@ -218,11 +212,69 @@ class TTSSynthesizer:
                 Path(output_path).unlink(missing_ok=True)
             except Exception:
                 pass
-            if temp_prompt_path:
+
+    def _get_cached_prompt(self, prompt_audio: str) -> Optional[Path]:
+        with self._prompt_cache_lock:
+            cached = self._prompt_cache.get(prompt_audio)
+        if cached and cached.exists():
+            return cached
+        return None
+
+    def _store_cached_prompt(self, prompt_audio: str, path: Path) -> None:
+        with self._prompt_cache_lock:
+            self._prompt_cache[prompt_audio] = path
+
+    def _prepare_prompt_audio(self, prompt_audio: str) -> Path:
+        prompt_path = Path(prompt_audio)
+        if prompt_audio.startswith(("http://", "https://")):
+            cached = self._get_cached_prompt(prompt_audio)
+            if cached:
+                logger.debug(
+                    "Using cached prompt audio",
+                    extra={"prompt_audio": prompt_audio, "path": str(cached)},
+                )
+                return cached
+
+            last_error: Optional[Exception] = None
+            for attempt in range(settings.max_retries):
                 try:
-                    Path(temp_prompt_path).unlink(missing_ok=True)
-                except Exception:
-                    pass
+                    import requests
+
+                    logger.info(
+                        "Downloading prompt audio",
+                        extra={"prompt_audio": prompt_audio, "attempt": attempt + 1},
+                    )
+                    resp = requests.get(prompt_audio, timeout=30)
+                    resp.raise_for_status()
+                    with tempfile.NamedTemporaryFile(
+                        suffix=".wav", delete=False, dir=settings.audio_temp_dir
+                    ) as tmp_prompt:
+                        tmp_prompt.write(resp.content)
+                        downloaded_path = Path(tmp_prompt.name)
+                    self._store_cached_prompt(prompt_audio, downloaded_path)
+                    return downloaded_path
+                except Exception as e:  # pragma: no cover - network related
+                    last_error = e
+                    logger.warning(
+                        "Failed to download prompt audio, will retry",
+                        extra={
+                            "prompt_audio": prompt_audio,
+                            "attempt": attempt + 1,
+                            "error": str(e),
+                        },
+                    )
+                    time.sleep(settings.retry_delay_seconds * (attempt + 1))
+
+            raise SynthesisError(
+                f"Failed to download prompt audio after {settings.max_retries} attempts: {last_error}"
+            ) from last_error
+
+        if prompt_path.exists():
+            return prompt_path
+
+        raise ModelNotLoadedError(
+            f"IndexTTS2 prompt audio not found or unreachable: {prompt_audio}"
+        )
 
     def _call_modelscope_api(
         self,

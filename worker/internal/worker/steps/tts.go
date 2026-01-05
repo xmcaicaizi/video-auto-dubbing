@@ -299,7 +299,7 @@ func (p *TTSProcessor) mergeSegmentAudios(ctx context.Context, taskID uuid.UUID)
 	}
 
 	for _, segFile := range segmentFiles {
-		fmt.Fprintf(concatF, "file '%s'\\n", segFile)
+		fmt.Fprintf(concatF, "file '%s'\n", segFile)
 	}
 	concatF.Close()
 

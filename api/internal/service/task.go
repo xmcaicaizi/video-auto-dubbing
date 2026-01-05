@@ -10,7 +10,7 @@ import (
 
 	"vedio/api/internal/database"
 	"vedio/api/internal/models"
-	"vedio/api/internal/queue"
+	"vedio/api/internal/orchestrator"
 	"vedio/api/internal/storage"
 
 	"github.com/google/uuid"
@@ -18,9 +18,9 @@ import (
 
 // TaskService handles task business logic.
 type TaskService struct {
-	db      *database.DB
-	storage *storage.Service
-	publisher *queue.Publisher
+	db           *database.DB
+	storage      *storage.Service
+	orchestrator orchestrator.TaskOrchestrator
 }
 
 // CreateTaskOptions carries optional per-task external credentials.
@@ -44,11 +44,11 @@ func toNullString(s string) sql.NullString {
 }
 
 // NewTaskService creates a new task service.
-func NewTaskService(db *database.DB, storage *storage.Service, publisher *queue.Publisher) *TaskService {
+func NewTaskService(db *database.DB, storage *storage.Service, orchestrator orchestrator.TaskOrchestrator) *TaskService {
 	return &TaskService{
-		db:        db,
-		storage:   storage,
-		publisher: publisher,
+		db:           db,
+		storage:      storage,
+		orchestrator: orchestrator,
 	}
 }
 
@@ -78,12 +78,12 @@ func (s *TaskService) CreateTask(ctx context.Context, file *multipart.FileHeader
 
 	// Create task record
 	task := &models.Task{
-		ID:             taskID,
-		Status:         models.TaskStatusCreated,
-		Progress:       0,
-		SourceVideoKey: videoKey,
-		SourceLanguage: sourceLang,
-		TargetLanguage: targetLang,
+		ID:              taskID,
+		Status:          models.TaskStatusCreated,
+		Progress:        0,
+		SourceVideoKey:  videoKey,
+		SourceLanguage:  sourceLang,
+		TargetLanguage:  targetLang,
 		ASRAppID:        nil,
 		ASRToken:        nil,
 		ASRCluster:      nil,
@@ -91,8 +91,8 @@ func (s *TaskService) CreateTask(ctx context.Context, file *multipart.FileHeader
 		GLMAPIURL:       nil,
 		GLMModel:        nil,
 		ModelScopeToken: nil,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
 	}
 
 	query := `
@@ -124,27 +124,9 @@ func (s *TaskService) CreateTask(ctx context.Context, file *multipart.FileHeader
 		return nil, fmt.Errorf("failed to create task: %w", err)
 	}
 
-	// Publish extract_audio task
-	extractAudioMsg := map[string]interface{}{
-		"task_id":          taskID.String(),
-		"step":             "extract_audio",
-		"attempt":          1,
-		"trace_id":         uuid.New().String(),
-		"created_at":       time.Now().Format(time.RFC3339),
-		"payload": map[string]interface{}{
-			"source_video_key":  videoKey,
-			"output_audio_key":  fmt.Sprintf("audios/%s/source.wav", taskID),
-		},
-	}
-	if err := s.publisher.Publish(ctx, "task.extract_audio", extractAudioMsg); err != nil {
-		return nil, fmt.Errorf("failed to publish extract_audio task: %w", err)
-	}
-
-	// Update task status
-	task.Status = models.TaskStatusQueued
-	if _, err := s.db.ExecContext(ctx, "UPDATE tasks SET status = $1, updated_at = $2 WHERE id = $3",
-		task.Status, time.Now(), task.ID); err != nil {
-		return nil, fmt.Errorf("failed to update task status: %w", err)
+	// Kick off orchestration
+	if err := s.orchestrator.StartTask(ctx, task); err != nil {
+		return nil, fmt.Errorf("failed to start task orchestration: %w", err)
 	}
 
 	return task, nil
@@ -363,4 +345,3 @@ func (s *TaskService) DeleteTask(ctx context.Context, taskID uuid.UUID) error {
 
 	return nil
 }
-

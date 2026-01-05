@@ -1,97 +1,20 @@
 package storage
 
 import (
-	"context"
-	"fmt"
-	"io"
-	"net/url"
-	"time"
-
+	sharedstorage "vedio/shared/storage"
 	"vedio/worker/internal/minio"
-
-	miniosdk "github.com/minio/minio-go/v7"
 )
 
-// Service handles file storage operations.
-type Service struct {
-	client         *minio.Client
-	bucket         string
-	publicEndpoint string // 外部可访问的 MinIO 端点（用于 presigned URL）
+// Service is an alias to the shared storage service.
+type Service = sharedstorage.Service
+
+// Option re-exports the shared storage options.
+type Option = sharedstorage.Option
+
+// WithHostOverride re-exports the shared host override option.
+var WithHostOverride = sharedstorage.WithHostOverride
+
+// New creates a new storage service using the shared implementation.
+func New(client *minio.Client, opts ...sharedstorage.Option) *Service {
+	return sharedstorage.New(client, opts...)
 }
-
-// New creates a new storage service.
-func New(client *minio.Client, bucket string, publicEndpoint string) *Service {
-	return &Service{
-		client:         client,
-		bucket:         bucket,
-		publicEndpoint: publicEndpoint,
-	}
-}
-
-// PutObject uploads an object to MinIO.
-func (s *Service) PutObject(ctx context.Context, key string, reader io.Reader, size int64, contentType string) error {
-	_, err := s.client.PutObject(
-		ctx,
-		s.bucket,
-		key,
-		reader,
-		size,
-		miniosdk.PutObjectOptions{
-			ContentType: contentType,
-		},
-	)
-	if err != nil {
-		return fmt.Errorf("failed to put object: %w", err)
-	}
-	return nil
-}
-
-// GetObject retrieves an object from MinIO.
-func (s *Service) GetObject(ctx context.Context, key string) (io.ReadCloser, error) {
-	obj, err := s.client.GetObject(
-		ctx,
-		s.bucket,
-		key,
-		miniosdk.GetObjectOptions{},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get object: %w", err)
-	}
-	return obj, nil
-}
-
-// DeleteObject deletes an object from MinIO.
-func (s *Service) DeleteObject(ctx context.Context, key string) error {
-	if err := s.client.RemoveObject(
-		ctx,
-		s.bucket,
-		key,
-		miniosdk.RemoveObjectOptions{},
-	); err != nil {
-		return fmt.Errorf("failed to delete object: %w", err)
-	}
-	return nil
-}
-
-// PresignedGetURL generates a presigned URL for external access (e.g., for ASR services).
-// If publicEndpoint is set, it replaces the host in the presigned URL to make it accessible externally.
-func (s *Service) PresignedGetURL(ctx context.Context, key string, expiry time.Duration) (string, error) {
-	// Generate presigned URL using MinIO SDK
-	presignedURL, err := s.client.PresignedGetObject(ctx, s.bucket, key, expiry, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate presigned URL: %w", err)
-	}
-
-	// If publicEndpoint is configured, replace the host
-	if s.publicEndpoint != "" {
-		parsedURL, err := url.Parse(presignedURL.String())
-		if err != nil {
-			return "", fmt.Errorf("failed to parse presigned URL: %w", err)
-		}
-		parsedURL.Host = s.publicEndpoint
-		return parsedURL.String(), nil
-	}
-
-	return presignedURL.String(), nil
-}
-

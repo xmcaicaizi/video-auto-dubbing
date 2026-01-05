@@ -115,3 +115,18 @@ func (s *Service) PresignedGetURL(ctx context.Context, key string, expiry time.D
 
 	return presignedURL.String(), nil
 }
+
+// ObjectExists checks whether an object exists without downloading it.
+func (s *Service) ObjectExists(ctx context.Context, key string) (bool, error) {
+	_, err := s.client.StatObject(ctx, s.bucket, key, miniosdk.StatObjectOptions{})
+	if err == nil {
+		return true, nil
+	}
+
+	responseErr := miniosdk.ToErrorResponse(err)
+	if responseErr.StatusCode == 404 {
+		return false, nil
+	}
+
+	return false, fmt.Errorf("failed to stat object: %w", err)
+}

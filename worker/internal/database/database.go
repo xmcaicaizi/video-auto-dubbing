@@ -36,4 +36,3 @@ func New(cfg config.DatabaseConfig) (*DB, error) {
 func (db *DB) Close() error {
 	return db.DB.Close()
 }
-

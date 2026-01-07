@@ -323,6 +323,14 @@ docker compose up -d --scale worker=5
 docker compose logs -f worker
 ```
 
+### 镜像 / 长视频调优
+
+- **硬件建议**：CPU ≥ 8 核、内存 ≥ 24GB，GPU 显存 ≥ 12GB；MinIO/磁盘预留 ≥ 200GB 以容纳长视频拆分音频、合成中间产物。
+- **环境变量示例**（可运行 `make long-video-mode-env` 查看）：`TRANSLATE_BATCH_SIZE=30`、`TTS_BATCH_SIZE=30`、`TTS_MAX_CONCURRENCY=6`、`TTS_MAX_RETRIES=4`、`TTS_RETRY_DELAY_SECONDS=3.0`、`TIMEOUT_EXTRACT_AUDIO_SECONDS=1800`、`TIMEOUT_ASR_SECONDS=2400`、`TIMEOUT_TTS_SECONDS=2400`、`TIMEOUT_MUX_SECONDS=1800`。
+- **补偿/定时任务**：启用 cron 或 CI 定时运行 `go run ./worker/cmd/tts_requeue`，扫描 `tts_audio_key` 为空的 segment 并重新投递 `task.tts`，避免单段失败阻塞 mux。
+- **存储与带宽**：监控 MinIO bucket 空间，必要时开启生命周期策略清理历史 dub/中间件；确保 Worker、ASR、TTS 与 MinIO 在同一可用区降低传输时延。
+- **FFmpeg 分段示例**：长视频可先按时间切片降低 ASR 超时风险，例如 `ffmpeg -ss 00:10:00 -to 00:20:00 -i input.mp4 -ac 1 -ar 16000 -y clip_10_20.wav`。
+
 ### 鎬ц兘璋冧紭
 
 1. **鏁版嵁搴撲紭鍖?*
@@ -345,4 +353,3 @@ docker compose logs -f worker
    - 鏍规嵁闇€姹傞€夋嫨 `STRICT_DURATION` 妯″紡锛堣川閲?vs 鏃堕暱绮剧‘搴︼級
    - 鐩戞帶 ModelScope API 璋冪敤閰嶉鍜岄檺娴佹儏鍐?
    - 浼樺寲鎵瑰鐞嗗ぇ灏忥紙鍒嗘鍚堟垚锛?
-

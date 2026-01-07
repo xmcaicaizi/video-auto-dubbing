@@ -230,11 +230,15 @@ func decodeTaskMessage(body []byte) (models.TaskMessage, uuid.UUID, error) {
 func (w *Worker) runStepWithStatus(ctx context.Context, processor StepProcessor, taskID uuid.UUID, taskMsg models.TaskMessage) error {
 	step := processor.Name()
 
+	stepCtx, cancel := w.withStepTimeout(ctx, step)
+	defer cancel()
+
 	w.logger.Info("Processing message",
 		zap.String("step", step),
 		zap.String("task_id", taskID.String()),
 		zap.Int("attempt", taskMsg.Attempt),
 		zap.String("trace_id", taskMsg.TraceID),
+		zap.Duration("timeout", w.stepTimeout(step)),
 	)
 
 	// Check if step is already completed (idempotency)
@@ -254,7 +258,7 @@ func (w *Worker) runStepWithStatus(ctx context.Context, processor StepProcessor,
 
 	// Process the step
 	startTime := time.Now()
-	processErr := processor.Process(ctx, taskID, taskMsg)
+	processErr := processor.Process(stepCtx, taskID, taskMsg)
 	duration := time.Since(startTime)
 
 	if processErr != nil {
@@ -392,4 +396,27 @@ func (w *Worker) retryMessage(ctx context.Context, msg models.TaskMessage, step 
 	// Publish retry message
 	routingKey := fmt.Sprintf("task.%s", step)
 	return w.publisher.Publish(ctx, routingKey, msg)
+}
+
+func (w *Worker) stepTimeout(step string) time.Duration {
+	switch step {
+	case "extract_audio":
+		return w.config.Timeouts.ExtractAudio
+	case "asr":
+		return w.config.Timeouts.ASR
+	case "tts":
+		return w.config.Timeouts.TTS
+	case "mux_video":
+		return w.config.Timeouts.Mux
+	default:
+		return 0
+	}
+}
+
+func (w *Worker) withStepTimeout(ctx context.Context, step string) (context.Context, context.CancelFunc) {
+	timeout := w.stepTimeout(step)
+	if timeout <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, timeout)
 }

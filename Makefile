@@ -180,3 +180,18 @@ install-tools:
 	@echo ""
 	@echo "✅ 工具安装完成（部分工具需要手动安装）"
 
+.PHONY: long-video-mode-env
+long-video-mode-env:
+	@echo "长视频模式示例环境变量："
+	@echo "  TRANSLATE_BATCH_SIZE=30"
+	@echo "  TRANSLATE_ITEM_MAX_RETRIES=3"
+	@echo "  TRANSLATE_MAX_TEXT_LENGTH=6000"
+	@echo "  TTS_BATCH_SIZE=30"
+	@echo "  TTS_MAX_CONCURRENCY=6"
+	@echo "  TTS_MAX_RETRIES=4"
+	@echo "  TTS_RETRY_DELAY_SECONDS=3.0"
+	@echo "  TIMEOUT_EXTRACT_AUDIO_SECONDS=1800"
+	@echo "  TIMEOUT_ASR_SECONDS=2400"
+	@echo "  TIMEOUT_TTS_SECONDS=2400"
+	@echo "  TIMEOUT_MUX_SECONDS=1800"
+	@echo "  MINIO_RESERVED_STORAGE_GB=200 (根据容量预留设置或监控)"

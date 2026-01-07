@@ -24,23 +24,23 @@ type Client struct {
 
 // SynthesisRequest represents a TTS synthesis request.
 type SynthesisRequest struct {
-    Text            string                 `json:"text"`
-    SpeakerID       string                 `json:"speaker_id"`
-    PromptAudioURL  string                 `json:"prompt_audio_url,omitempty"`
-    TargetDurationMs int                   `json:"target_duration_ms"`
-    Language        string                 `json:"language"`
-    ProsodyControl  map[string]interface{} `json:"prosody_control,omitempty"`
-    OutputFormat    string                 `json:"output_format"`
-    SampleRate      int                    `json:"sample_rate"`
+	Text             string                 `json:"text"`
+	SpeakerID        string                 `json:"speaker_id"`
+	PromptAudioURL   string                 `json:"prompt_audio_url,omitempty"`
+	TargetDurationMs int                    `json:"target_duration_ms"`
+	Language         string                 `json:"language"`
+	ProsodyControl   map[string]interface{} `json:"prosody_control,omitempty"`
+	OutputFormat     string                 `json:"output_format"`
+	SampleRate       int                    `json:"sample_rate"`
 }
 
 // SynthesisResponse represents a TTS synthesis response.
 type SynthesisResponse struct {
-	AudioURL    string `json:"audio_url"`
+	AudioURL   string `json:"audio_url"`
 	DurationMs int    `json:"duration_ms"`
-	SampleRate  int    `json:"sample_rate"`
-	Format      string `json:"format"`
-	FileSize    int    `json:"file_size"`
+	SampleRate int    `json:"sample_rate"`
+	Format     string `json:"format"`
+	FileSize   int    `json:"file_size"`
 }
 
 // NewClient creates a new TTS client.
@@ -144,4 +144,3 @@ func (c *Client) Synthesize(ctx context.Context, req SynthesisRequest, modelScop
 	// If no URL, assume response body contains audio (for future direct audio response)
 	return resp.Body, nil
 }
-

@@ -50,6 +50,13 @@
 - `created_at`: 消息创建时间
 - `payload`: 步骤特定的负载数据
 
+## 批处理与限流
+
+- Translate 阶段支持批处理，受环境变量 `TRANSLATE_BATCH_SIZE` 控制，批失败会降级为单条重试，单条重试次数由 `TRANSLATE_ITEM_MAX_RETRIES` 控制；文本长度超出 `TRANSLATE_MAX_TEXT_LENGTH` 时会自动分段再翻译。
+- TTS 阶段按 `TTS_BATCH_SIZE` 批量拉取 `tts_audio_key` 为空的 segments，按 `TTS_MAX_CONCURRENCY` 控制并发；单段失败按 `TTS_MAX_RETRIES` 与 `TTS_RETRY_DELAY_SECONDS` 重试，仍失败会写入补偿队列 `task.tts_compensation`。
+- 幂等：TTS 消费前会查询 `segments.tts_audio_key`，已存在则跳过，避免重复合成阻塞后续 mux。
+- 超时：每个步骤可通过 `TIMEOUT_EXTRACT_AUDIO_SECONDS` / `TIMEOUT_ASR_SECONDS` / `TIMEOUT_TTS_SECONDS` / `TIMEOUT_MUX_SECONDS` 设置处理超时，Worker 会在日志中打印当前超时时间。
+
 ## 各步骤消息 Schema
 
 ### 1. extract_audio
@@ -98,15 +105,17 @@
   "task_id": "550e8400-e29b-41d4-a716-446655440000",
   "segment_ids": ["seg-0", "seg-1"],
   "source_language": "zh",
-  "target_language": "en"
+  "target_language": "en",
+  "batch_size": 20
 }
 ```
 
 **处理逻辑**:
-- 从数据库读取 segments 的 `src_text`
-- 调用 GLM 翻译 API（批量或逐条）
+- 从数据库按 idx 读取 `mt_text` 为空的 segments（`src_text` 为输入）
+- 按 `batch_size`（或 `TRANSLATE_BATCH_SIZE` 环境变量）调用 GLM 翻译 API，批失败降级为单条重试，超长文本按 `TRANSLATE_MAX_TEXT_LENGTH` 拆分重试
+- 单条重试次数：`TRANSLATE_ITEM_MAX_RETRIES`
 - 更新 segments 表的 `mt_text`
-- 所有 segments 翻译完成后，投递 `task.tts` 消息
+- 所有 segments 翻译完成后，投递单条 `task.tts` 消息，TTS 阶段会自行按批消费
 
 **批量处理优化**:
 - 可以一次翻译多个 segments，减少 API 调用
@@ -120,27 +129,23 @@
 ```json
 {
   "task_id": "550e8400-e29b-41d4-a716-446655440000",
-  "segment_id": "seg-0",
-  "segment_idx": 0,
-  "text": "Hello, world",
-  "target_duration_ms": 1500,
-  "speaker_id": "default",
-  "prosody_control": {
-    "speed": 1.0,
-    "pitch": 1.0
-  }
+  "batch_size": 20,
+  "max_concurrency": 4,
+  "max_retries": 3,
+  "retry_delay_sec": 2.0,
+  "speaker_id": "default"
 }
 ```
 
 **处理逻辑**:
-- 调用 tts_service 的 `/synthesize` 接口
-- 保存生成的音频到 MinIO
-- 更新 segments 表的 `tts_audio_key` 和 `tts_params_json`
-- 所有 segments 的 TTS 完成后，投递 `task.mux_video` 消息
+- 从数据库批量获取 `tts_audio_key` 为空的 segments，按照 `batch_size` 控制批大小
+- 并发数由 `max_concurrency`（或 `TTS_MAX_CONCURRENCY`）限制；单段失败按 `max_retries` / `retry_delay_sec` 重试
+- 调用 tts_service 的 `/synthesize` 接口；若目标段已有 `tts_audio_key` 则跳过（幂等）
+- 保存生成的音频到 MinIO，更新 segments 表的 `tts_audio_key` 和 `tts_params_json`
+- 所有 segments 的 TTS 完成后，投递 `task.mux_video` 消息；批内失败超过重试次数会把 segment 写入 `task.tts_compensation` 队列
 
 **并发控制**:
-- 可以为每个 segment 投递独立的 tts 消息
-- Worker 可以并发处理多个 tts 任务
+- 使用 `TTS_MAX_CONCURRENCY` 控制批内并发，结合 `TTS_MAX_RETRIES` 与 `TTS_RETRY_DELAY_SECONDS` 减少长视频场景的积压
 
 ### 5. mux_video
 
@@ -259,6 +264,21 @@ func retryMessage(msg TaskMessage, delay time.Duration) error {
 - 发送告警通知
 - 提供手动重试接口
 
+### 补偿 / 死信处理（TTS）
+
+- 路由：`task.tts_compensation`，写入当某个 segment 在 TTS 重试后仍失败。
+- 典型负载：
+```json
+{
+  "task_id": "550e8400-e29b-41d4-a716-446655440000",
+  "segment_idx": 3,
+  "error": "API timeout",
+  "created_at": "2024-01-01T12:00:00Z",
+  "routing_key": "task.tts"
+}
+```
+- 运维补偿：可运行 `go run ./worker/cmd/tts_requeue -limit 100` 扫描 `tts_audio_key` 为空的 segment 并重新投递 `task.tts`，也可使用定时任务执行。
+
 ## 消息确认机制
 
 ### Ack 策略
@@ -313,4 +333,3 @@ var stepDependencies = map[string][]string{
     "mux_video":   {"tts"},
 }
 ```
-

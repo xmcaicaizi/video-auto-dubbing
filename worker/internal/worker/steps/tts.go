@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"vedio/worker/internal/models"
@@ -45,6 +46,9 @@ func (p *TTSProcessor) Process(ctx context.Context, taskID uuid.UUID, msg models
 		zap.Int("segment_idx", payload.SegmentIdx),
 		zap.String("text", payload.Text),
 		zap.Int("target_duration_ms", payload.TargetDurationMs),
+		zap.Int("batch_size", p.resolveBatchSize(payload)),
+		zap.Int("max_concurrency", p.resolveConcurrency(payload)),
+		zap.Int("max_retries", p.resolveMaxRetries(payload)),
 	)
 
 	sourceAudioPath, err := p.ensureSourceAudio(ctx, taskID)
@@ -57,27 +61,252 @@ func (p *TTSProcessor) Process(ctx context.Context, taskID uuid.UUID, msg models
 		return err
 	}
 
-	// Get task info to get target language
+	targetLang, modelscopeToken, err := p.loadTaskLanguage(ctx, taskID)
+	if err != nil {
+		return err
+	}
+
+	pendingSegments, err := p.loadPendingSegments(ctx, taskID, payload)
+	if err != nil {
+		return err
+	}
+	if len(pendingSegments) == 0 {
+		p.deps.Logger.Info("No pending TTS segments", zap.String("task_id", taskID.String()))
+		return p.tryFinalizeTTS(ctx, taskID)
+	}
+
+	maxRetries := p.resolveMaxRetries(payload)
+	retryDelay := p.resolveRetryDelay(payload)
+
+	concurrency := p.resolveConcurrency(payload)
+	if concurrency <= 0 {
+		concurrency = 1
+	}
+
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var segmentErr error
+
+	for _, seg := range pendingSegments {
+		if seg.ttsAudioKey != "" {
+			continue
+		}
+		wg.Add(1)
+		sem <- struct{}{}
+		segment := seg
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			if err := p.processSegmentWithRetry(ctx, taskID, segment, targetLang, modelscopeToken, promptInfo, maxRetries, retryDelay); err != nil {
+				p.deps.Logger.Error("TTS segment failed after retries", zap.String("task_id", taskID.String()), zap.Int("segment_idx", segment.idx), zap.Error(err))
+				_ = p.publishCompensation(ctx, taskID, segment.idx, err)
+				mu.Lock()
+				if segmentErr == nil {
+					segmentErr = err
+				}
+				mu.Unlock()
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	if segmentErr != nil {
+		return segmentErr
+	}
+
+	pendingCount, err := p.remainingPendingSegments(ctx, taskID)
+	if err != nil {
+		return err
+	}
+
+	if pendingCount > 0 {
+		p.deps.Logger.Info("Pending segments remain, requeueing tts", zap.String("task_id", taskID.String()), zap.Int("remaining", pendingCount))
+		return p.deps.Publisher.Publish(ctx, "task.tts", map[string]interface{}{
+			"task_id":    taskID.String(),
+			"step":       "tts",
+			"attempt":    1,
+			"trace_id":   uuid.New().String(),
+			"created_at": time.Now().Format(time.RFC3339),
+			"payload": map[string]interface{}{
+				"task_id":         taskID.String(),
+				"batch_size":      p.resolveBatchSize(payload),
+				"max_concurrency": concurrency,
+				"max_retries":     maxRetries,
+				"retry_delay_sec": retryDelay.Seconds(),
+				"speaker_id":      payload.SpeakerID,
+			},
+		})
+	}
+
+	return p.tryFinalizeTTS(ctx, taskID)
+}
+
+func (p *TTSProcessor) loadTaskLanguage(ctx context.Context, taskID uuid.UUID) (string, *string, error) {
 	var targetLang string
 	var modelscopeToken *string
 	query := `SELECT target_language, modelscope_token FROM tasks WHERE id = $1`
 	if err := p.deps.DB.QueryRowContext(ctx, query, taskID).Scan(&targetLang, &modelscopeToken); err != nil {
-		return fmt.Errorf("failed to get task target language: %w", err)
+		return "", nil, fmt.Errorf("failed to get task target language: %w", err)
+	}
+	return targetLang, modelscopeToken, nil
+}
+
+type ttsSegment struct {
+	idx         int
+	text        string
+	targetDurMs int
+	ttsAudioKey string
+	prosody     map[string]interface{}
+	speakerID   string
+}
+
+func (p *TTSProcessor) loadPendingSegments(ctx context.Context, taskID uuid.UUID, payload models.TTSPayload) ([]ttsSegment, error) {
+	batchSize := p.resolveBatchSize(payload)
+	if batchSize <= 0 {
+		batchSize = 20
+	}
+	query := `SELECT idx, COALESCE(mt_text, src_text, ''), duration_ms, COALESCE(tts_audio_key, '') FROM segments WHERE task_id = $1 AND (tts_audio_key IS NULL OR tts_audio_key = '') ORDER BY idx LIMIT $2`
+	rows, err := p.deps.DB.QueryContext(ctx, query, taskID, batchSize)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pending segments: %w", err)
+	}
+	defer rows.Close()
+
+	var segments []ttsSegment
+	for rows.Next() {
+		var seg ttsSegment
+		if err := rows.Scan(&seg.idx, &seg.text, &seg.targetDurMs, &seg.ttsAudioKey); err != nil {
+			continue
+		}
+		if seg.targetDurMs == 0 {
+			seg.targetDurMs = 1500
+		}
+		seg.speakerID = payload.SpeakerID
+		if seg.speakerID == "" {
+			seg.speakerID = "default"
+		}
+		seg.prosody = payload.ProsodyControl
+		segments = append(segments, seg)
 	}
 
-	// Prepare TTS request
+	if len(segments) == 0 && payload.SegmentIdx > 0 {
+		var seg ttsSegment
+		singleQuery := `SELECT idx, COALESCE(mt_text, src_text, ''), duration_ms, COALESCE(tts_audio_key, '') FROM segments WHERE task_id = $1 AND idx = $2`
+		if err := p.deps.DB.QueryRowContext(ctx, singleQuery, taskID, payload.SegmentIdx).Scan(&seg.idx, &seg.text, &seg.targetDurMs, &seg.ttsAudioKey); err == nil {
+			if seg.targetDurMs == 0 {
+				seg.targetDurMs = 1500
+			}
+			seg.speakerID = payload.SpeakerID
+			if seg.speakerID == "" {
+				seg.speakerID = "default"
+			}
+			seg.prosody = payload.ProsodyControl
+			segments = append(segments, seg)
+		}
+	}
+
+	if len(segments) == 0 && payload.Text != "" {
+		targetDur := payload.TargetDurationMs
+		if targetDur == 0 {
+			targetDur = 1500
+		}
+		speaker := payload.SpeakerID
+		if speaker == "" {
+			speaker = "default"
+		}
+		segments = append(segments, ttsSegment{
+			idx:         payload.SegmentIdx,
+			text:        payload.Text,
+			targetDurMs: targetDur,
+			speakerID:   speaker,
+			prosody:     payload.ProsodyControl,
+		})
+	}
+
+	return segments, nil
+}
+
+func (p *TTSProcessor) resolveBatchSize(payload models.TTSPayload) int {
+	if payload.BatchSize > 0 {
+		return payload.BatchSize
+	}
+	if p.deps.Config.Processing.TTS.BatchSize > 0 {
+		return p.deps.Config.Processing.TTS.BatchSize
+	}
+	return 20
+}
+
+func (p *TTSProcessor) resolveConcurrency(payload models.TTSPayload) int {
+	if payload.MaxConcurrency > 0 {
+		return payload.MaxConcurrency
+	}
+	if p.deps.Config.Processing.TTS.MaxConcurrency > 0 {
+		return p.deps.Config.Processing.TTS.MaxConcurrency
+	}
+	return 4
+}
+
+func (p *TTSProcessor) resolveMaxRetries(payload models.TTSPayload) int {
+	if payload.MaxRetries > 0 {
+		return payload.MaxRetries
+	}
+	if p.deps.Config.Processing.TTS.MaxRetries > 0 {
+		return p.deps.Config.Processing.TTS.MaxRetries
+	}
+	return 3
+}
+
+func (p *TTSProcessor) resolveRetryDelay(payload models.TTSPayload) time.Duration {
+	if payload.RetryDelaySec > 0 {
+		return time.Duration(payload.RetryDelaySec * float64(time.Second))
+	}
+	if p.deps.Config.Processing.TTS.RetryDelay > 0 {
+		return p.deps.Config.Processing.TTS.RetryDelay
+	}
+	return 2 * time.Second
+}
+
+func (p *TTSProcessor) processSegmentWithRetry(ctx context.Context, taskID uuid.UUID, segment ttsSegment, targetLang string, modelscopeToken *string, promptInfo promptInfo, maxRetries int, retryDelay time.Duration) error {
+	existingKey, err := p.getExistingSegmentAudio(ctx, taskID, segment.idx)
+	if err == nil && existingKey != "" {
+		p.deps.Logger.Info("Segment already synthesized, skipping", zap.String("task_id", taskID.String()), zap.Int("segment_idx", segment.idx), zap.String("tts_audio_key", existingKey))
+		return nil
+	}
+
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			time.Sleep(retryDelay)
+		}
+		if err := p.processSingleSegment(ctx, taskID, segment, targetLang, modelscopeToken, promptInfo); err != nil {
+			lastErr = err
+			p.deps.Logger.Warn("Segment TTS attempt failed", zap.String("task_id", taskID.String()), zap.Int("segment_idx", segment.idx), zap.Int("attempt", attempt+1), zap.Error(err))
+			continue
+		}
+		return nil
+	}
+	return lastErr
+}
+
+func (p *TTSProcessor) processSingleSegment(ctx context.Context, taskID uuid.UUID, segment ttsSegment, targetLang string, modelscopeToken *string, promptInfo promptInfo) error {
+	if strings.TrimSpace(segment.text) == "" {
+		return fmt.Errorf("segment %d has empty text", segment.idx)
+	}
+
 	ttsReq := tts.SynthesisRequest{
-		Text:             payload.Text,
-		SpeakerID:        payload.SpeakerID,
+		Text:             segment.text,
+		SpeakerID:        segment.speakerID,
 		PromptAudioURL:   promptInfo.url,
-		TargetDurationMs: payload.TargetDurationMs,
+		TargetDurationMs: segment.targetDurMs,
 		Language:         targetLang,
-		ProsodyControl:   payload.ProsodyControl,
+		ProsodyControl:   segment.prosody,
 		OutputFormat:     "wav",
 		SampleRate:       22050,
 	}
 
-	// Call TTS service
 	token := ""
 	if modelscopeToken != nil {
 		token = *modelscopeToken
@@ -88,27 +317,23 @@ func (p *TTSProcessor) Process(ctx context.Context, taskID uuid.UUID, msg models
 	}
 	defer audioReader.Close()
 
-	// Save audio to MinIO
-	audioKey := fmt.Sprintf("tts/%s/segment_%d.wav", taskID, payload.SegmentIdx)
+	audioKey := fmt.Sprintf("tts/%s/segment_%d.wav", taskID, segment.idx)
 
-	// Read audio data to get size
 	audioData, err := io.ReadAll(audioReader)
 	if err != nil {
 		return fmt.Errorf("failed to read audio: %w", err)
 	}
 
-	// Upload to MinIO
 	audioBytesReader := bytes.NewReader(audioData)
 	if err := p.deps.Storage.PutObject(ctx, audioKey, audioBytesReader, int64(len(audioData)), "audio/wav"); err != nil {
 		return fmt.Errorf("failed to upload TTS audio: %w", err)
 	}
 
-	// Prepare TTS params JSON
 	ttsParams := map[string]interface{}{
-		"speaker_id":         payload.SpeakerID,
-		"target_duration_ms": payload.TargetDurationMs,
-		"prosody_control":    payload.ProsodyControl,
-		"prompt_speaker_id":  payload.SpeakerID,
+		"speaker_id":         segment.speakerID,
+		"target_duration_ms": segment.targetDurMs,
+		"prosody_control":    segment.prosody,
+		"prompt_speaker_id":  segment.speakerID,
 		"prompt_key":         promptInfo.key,
 		"prompt_url":         promptInfo.url,
 		"prompt_segment_idx": promptInfo.segmentIdx,
@@ -117,63 +342,93 @@ func (p *TTSProcessor) Process(ctx context.Context, taskID uuid.UUID, msg models
 	ttsParamsJSON, _ := json.Marshal(ttsParams)
 	ttsParamsStr := string(ttsParamsJSON)
 
-	// Update segment with TTS audio key and params
 	updateQuery := `UPDATE segments SET tts_audio_key = $1, tts_params_json = $2, updated_at = $3 WHERE task_id = $4 AND idx = $5`
-	if _, err := p.deps.DB.ExecContext(ctx, updateQuery, audioKey, ttsParamsStr, time.Now(), taskID, payload.SegmentIdx); err != nil {
+	if _, err := p.deps.DB.ExecContext(ctx, updateQuery, audioKey, ttsParamsStr, time.Now(), taskID, segment.idx); err != nil {
 		return fmt.Errorf("failed to update segment: %w", err)
 	}
 
 	p.deps.Logger.Info("TTS completed",
 		zap.String("task_id", taskID.String()),
-		zap.Int("segment_idx", payload.SegmentIdx),
+		zap.Int("segment_idx", segment.idx),
 		zap.String("audio_key", audioKey),
 	)
 
-	// Check if all segments have TTS audio
-	var count int
-	if err := p.deps.DB.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM segments WHERE task_id = $1 AND tts_audio_key IS NULL",
-		taskID,
-	).Scan(&count); err != nil {
-		return fmt.Errorf("failed to check segments: %w", err)
-	}
-
-	// If all segments are done, merge audio and publish mux_video task
-	if count == 0 {
-		// Merge all segment audios
-		if err := p.mergeSegmentAudios(ctx, taskID); err != nil {
-			return fmt.Errorf("failed to merge segment audios: %w", err)
-		}
-
-		// Get task info
-		var sourceVideoKey string
-		if err := p.deps.DB.QueryRowContext(ctx,
-			"SELECT source_video_key FROM tasks WHERE id = $1",
-			taskID,
-		).Scan(&sourceVideoKey); err != nil {
-			return fmt.Errorf("failed to get task: %w", err)
-		}
-
-		muxMsg := map[string]interface{}{
-			"task_id":    taskID.String(),
-			"step":       "mux_video",
-			"attempt":    1,
-			"trace_id":   uuid.New().String(),
-			"created_at": time.Now().Format(time.RFC3339),
-			"payload": map[string]interface{}{
-				"task_id":          taskID.String(),
-				"source_video_key": sourceVideoKey,
-				"tts_audio_key":    fmt.Sprintf("tts/%s/dub.wav", taskID),
-				"output_video_key": fmt.Sprintf("outputs/%s/final.mp4", taskID),
-			},
-		}
-
-		if err := p.deps.Publisher.Publish(ctx, "task.mux_video", muxMsg); err != nil {
-			return fmt.Errorf("failed to publish mux_video task: %w", err)
-		}
-	}
-
 	return nil
+}
+
+func (p *TTSProcessor) getExistingSegmentAudio(ctx context.Context, taskID uuid.UUID, segmentIdx int) (string, error) {
+	var audioKey sql.NullString
+	if err := p.deps.DB.QueryRowContext(ctx, `SELECT tts_audio_key FROM segments WHERE task_id = $1 AND idx = $2`, taskID, segmentIdx).Scan(&audioKey); err != nil {
+		return "", err
+	}
+	if audioKey.Valid {
+		return audioKey.String, nil
+	}
+	return "", nil
+}
+
+func (p *TTSProcessor) remainingPendingSegments(ctx context.Context, taskID uuid.UUID) (int, error) {
+	var count int
+	if err := p.deps.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM segments WHERE task_id = $1 AND (tts_audio_key IS NULL OR tts_audio_key = '')", taskID).Scan(&count); err != nil {
+		return 0, fmt.Errorf("failed to check pending segments: %w", err)
+	}
+	return count, nil
+}
+
+func (p *TTSProcessor) tryFinalizeTTS(ctx context.Context, taskID uuid.UUID) error {
+	count, err := p.remainingPendingSegments(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return fmt.Errorf("pending segments remain: %d", count)
+	}
+
+	if err := p.mergeSegmentAudios(ctx, taskID); err != nil {
+		return fmt.Errorf("failed to merge segment audios: %w", err)
+	}
+
+	var sourceVideoKey string
+	if err := p.deps.DB.QueryRowContext(ctx, "SELECT source_video_key FROM tasks WHERE id = $1", taskID).Scan(&sourceVideoKey); err != nil {
+		return fmt.Errorf("failed to get task: %w", err)
+	}
+
+	muxMsg := map[string]interface{}{
+		"task_id":    taskID.String(),
+		"step":       "mux_video",
+		"attempt":    1,
+		"trace_id":   uuid.New().String(),
+		"created_at": time.Now().Format(time.RFC3339),
+		"payload": map[string]interface{}{
+			"task_id":          taskID.String(),
+			"source_video_key": sourceVideoKey,
+			"tts_audio_key":    fmt.Sprintf("tts/%s/dub.wav", taskID),
+			"output_video_key": fmt.Sprintf("outputs/%s/final.mp4", taskID),
+		},
+	}
+
+	if err := p.deps.Publisher.Publish(ctx, "task.mux_video", muxMsg); err != nil {
+		return fmt.Errorf("failed to publish mux_video task: %w", err)
+	}
+	return nil
+}
+
+func (p *TTSProcessor) publishCompensation(ctx context.Context, taskID uuid.UUID, segmentIdx int, err error) error {
+	payload := map[string]interface{}{
+		"task_id":     taskID.String(),
+		"segment_idx": segmentIdx,
+		"error":       err.Error(),
+		"created_at":  time.Now().Format(time.RFC3339),
+		"routing_key": "task.tts",
+	}
+	return p.deps.Publisher.Publish(ctx, "task.tts_compensation", map[string]interface{}{
+		"task_id":    taskID.String(),
+		"step":       "tts",
+		"attempt":    1,
+		"trace_id":   uuid.New().String(),
+		"created_at": time.Now().Format(time.RFC3339),
+		"payload":    payload,
+	})
 }
 
 type promptInfo struct {

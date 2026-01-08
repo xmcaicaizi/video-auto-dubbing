@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -76,30 +78,36 @@ func (c *Client) Translate(ctx context.Context, texts []string, sourceLang, targ
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// Create HTTP request
-	req, err := http.NewRequestWithContext(ctx, "POST", c.apiURL, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// Set headers
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
-
-	// Make request with retry
+	// Make request with retry/backoff to avoid GLM 429 rate limit failures.
 	var resp *http.Response
-	maxRetries := 3
+	maxRetries := 6
+	var lastStatus int
 	for i := 0; i < maxRetries; i++ {
+		// Create HTTP request
+		req, reqErr := http.NewRequestWithContext(ctx, "POST", c.apiURL, bytes.NewReader(bodyBytes))
+		if reqErr != nil {
+			return nil, fmt.Errorf("failed to create request: %w", reqErr)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
+
 		resp, err = c.client.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			break
 		}
+
+		if resp != nil {
+			lastStatus = resp.StatusCode
+			if shouldRetryStatus(resp.StatusCode) && i < maxRetries-1 {
+				delay := retryDelay(resp, i)
+				resp.Body.Close()
+				time.Sleep(delay)
+				continue
+			}
+		}
 		if i < maxRetries-1 {
 			time.Sleep(time.Duration(i+1) * time.Second)
-			// Recreate request for retry
-			req, _ = http.NewRequestWithContext(ctx, "POST", c.apiURL, bytes.NewReader(bodyBytes))
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
+			continue
 		}
 	}
 
@@ -110,6 +118,9 @@ func (c *Client) Translate(ctx context.Context, texts []string, sourceLang, targ
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		if lastStatus != 0 {
+			return nil, fmt.Errorf("translation API returned status %d: %s", lastStatus, string(body))
+		}
 		return nil, fmt.Errorf("translation API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -170,6 +181,27 @@ func decodeGLMContentText(raw json.RawMessage) (string, error) {
 		return obj.Text, nil
 	}
 	return "", fmt.Errorf("unsupported content format")
+}
+
+func shouldRetryStatus(status int) bool {
+	return status == http.StatusTooManyRequests ||
+		status == http.StatusServiceUnavailable ||
+		status == http.StatusBadGateway ||
+		status == http.StatusGatewayTimeout
+}
+
+func retryDelay(resp *http.Response, attempt int) time.Duration {
+	if resp != nil {
+		if v := resp.Header.Get("Retry-After"); v != "" {
+			if seconds, err := strconv.Atoi(v); err == nil && seconds > 0 {
+				return time.Duration(seconds) * time.Second
+			}
+		}
+	}
+	// Exponential backoff with jitter for rate-limit responses.
+	base := time.Duration(5*(attempt+1)) * time.Second
+	jitter := time.Duration(rand.Intn(1000)) * time.Millisecond
+	return base + jitter
 }
 
 func stripCodeFences(s string) string {

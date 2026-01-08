@@ -65,8 +65,8 @@ services:
   # API 服务（Go）
   api:
     build:
-      context: ./api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: api/Dockerfile
     container_name: video-dubbing-api
     environment:
       # 数据库配置
@@ -113,8 +113,8 @@ services:
   # Worker 服务（Go）
   worker:
     build:
-      context: ./worker
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: worker/Dockerfile
     container_name: video-dubbing-worker
     environment:
       # 数据库配置

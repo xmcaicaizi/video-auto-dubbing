@@ -8,17 +8,19 @@ RUN apk add --no-cache git
 WORKDIR /app
 
 # Copy go mod files
-COPY go.mod ./
-RUN go mod download
+COPY worker/go.mod worker/go.sum ./worker/
+COPY shared/go.mod shared/go.sum ./shared/
+RUN cd /app/worker && go mod download
 
 # Copy source code
-COPY . .
+COPY shared ./shared
+COPY worker ./worker
 
 # Ensure go.sum is complete for builds inside container
-RUN go mod tidy
+RUN cd /app/worker && go mod tidy
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o worker ./main.go
+RUN cd /app/worker && CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o worker ./main.go
 
 # Runtime stage
 FROM alpine:latest
@@ -29,7 +31,7 @@ RUN apk --no-cache add ca-certificates ffmpeg
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /app/worker .
+COPY --from=builder /app/worker/worker .
 
 # Create temp directory
 RUN mkdir -p /tmp

@@ -18,9 +18,9 @@ import (
 
 // TaskService handles task business logic.
 type TaskService struct {
-	db        *database.DB
-	storage   *storage.Service
-	publisher *queue.Publisher
+	db           *database.DB
+	storage      *storage.Service
+	orchestrator orchestrator.TaskOrchestrator
 }
 
 // CreateTaskOptions carries optional per-task external credentials.
@@ -124,27 +124,8 @@ func (s *TaskService) CreateTask(ctx context.Context, file *multipart.FileHeader
 		return nil, fmt.Errorf("failed to create task: %w", err)
 	}
 
-	// Publish extract_audio task
-	extractAudioMsg := map[string]interface{}{
-		"task_id":    taskID.String(),
-		"step":       "extract_audio",
-		"attempt":    1,
-		"trace_id":   uuid.New().String(),
-		"created_at": time.Now().Format(time.RFC3339),
-		"payload": map[string]interface{}{
-			"source_video_key": videoKey,
-			"output_audio_key": fmt.Sprintf("audios/%s/source.wav", taskID),
-		},
-	}
-	if err := s.publisher.Publish(ctx, "task.extract_audio", extractAudioMsg); err != nil {
-		return nil, fmt.Errorf("failed to publish extract_audio task: %w", err)
-	}
-
-	// Update task status
-	task.Status = models.TaskStatusQueued
-	if _, err := s.db.ExecContext(ctx, "UPDATE tasks SET status = $1, updated_at = $2 WHERE id = $3",
-		task.Status, time.Now(), task.ID); err != nil {
-		return nil, fmt.Errorf("failed to update task status: %w", err)
+	if err := s.orchestrator.StartTask(ctx, task); err != nil {
+		return nil, fmt.Errorf("failed to start task: %w", err)
 	}
 
 	return task, nil

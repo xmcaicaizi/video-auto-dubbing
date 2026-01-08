@@ -87,17 +87,24 @@ func (p *MuxVideoProcessor) Process(ctx context.Context, taskID uuid.UUID, msg m
 	outputPath := fmt.Sprintf("/tmp/%s_final.mp4", taskID)
 	defer os.Remove(outputPath)
 
-	cmd := exec.CommandContext(ctx, p.deps.Config.FFmpeg.Path,
+	ffmpegArgs := []string{
 		"-i", videoPath,
 		"-i", audioPath,
 		"-c:v", "copy", // Copy video codec
 		"-c:a", "aac", // Encode audio as AAC
+	}
+	if p.deps.Config.FFmpeg.DenoiseFilter != "" {
+		ffmpegArgs = append(ffmpegArgs, "-af", p.deps.Config.FFmpeg.DenoiseFilter)
+	}
+	ffmpegArgs = append(ffmpegArgs,
 		"-map", "0:v:0", // Use video from first input
 		"-map", "1:a:0", // Use audio from second input
 		"-shortest", // Finish encoding when the shortest input stream ends
 		"-y",        // Overwrite
 		outputPath,
 	)
+
+	cmd := exec.CommandContext(ctx, p.deps.Config.FFmpeg.Path, ffmpegArgs...)
 
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("ffmpeg muxing failed: %w", err)

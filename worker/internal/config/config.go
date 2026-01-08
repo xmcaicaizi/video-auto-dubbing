@@ -26,7 +26,8 @@ type Config struct {
 
 // FFmpegConfig holds FFmpeg configuration.
 type FFmpegConfig struct {
-	Path string
+	Path          string
+	DenoiseFilter string
 }
 
 // ProcessingConfig tunes batching, concurrency and retries for heavy steps.
@@ -70,6 +71,7 @@ func Load() (*Config, error) {
 
 	v := loader.Viper()
 	v.SetDefault("FFMPEG_PATH", "/usr/bin/ffmpeg")
+	v.SetDefault("FFMPEG_DENOISE_FILTER", "afftdn=nr=12:nf=-25")
 	v.SetDefault("TRANSLATE_BATCH_SIZE", 20)
 	v.SetDefault("TRANSLATE_ITEM_MAX_RETRIES", 2)
 	v.SetDefault("TRANSLATE_MAX_TEXT_LENGTH", 4000)
@@ -90,7 +92,8 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		BaseConfig: *baseCfg,
 		FFmpeg: FFmpegConfig{
-			Path: v.GetString("FFMPEG_PATH"),
+			Path:          v.GetString("FFMPEG_PATH"),
+			DenoiseFilter: v.GetString("FFMPEG_DENOISE_FILTER"),
 		},
 		Processing: ProcessingConfig{
 			Translate: TranslateConfig{

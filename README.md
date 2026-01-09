@@ -86,6 +86,27 @@
 4. 下载 IndexTTS-2 模型权重（见 `docs/startup-guide.md`）。
 5. 启动并验证：`docker compose up -d && docker compose ps`，前端访问 `http://localhost`，API 健康检查 `http://localhost:8080/health`。
 
+### 一键 Docker 部署（推荐）
+
+```bash
+bash scripts/bootstrap.sh
+```
+
+脚本会自动复制 `env.example` 到 `.env`（如不存在）、下载 IndexTTS-2 权重，并执行 `docker compose up -d --build`。
+
+### 真实 E2E 测试（10 秒样例）
+
+```bash
+# 生成 10 秒测试视频（首次执行会拉取 ffmpeg 镜像）
+bash scripts/prepare_test_video.sh
+
+# 运行真实翻译 E2E（不使用 mock）
+GLM_API_KEY=你的真实Key bash scripts/e2e_test.sh
+```
+
+默认使用 `test_vedio/test_video_10s.mp4`，如需指定视频或语言：
+`TEST_VIDEO=... SOURCE_LANGUAGE=zh TARGET_LANGUAGE=en bash scripts/e2e_test.sh`。
+
 - **MinIO 控制台**: http://localhost:9001
 
 - **RabbitMQ 管理**: http://localhost:15672
@@ -442,5 +463,14 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 
 
-- TTS 服务使用的 IndexTTS2 代码位于 `tts_service/indextts`（来自 GitHub 上游仓库）
+- TTS 服务使用的 IndexTTS2 代码位于 `tts_service/indextts`（来自上游仓库 https://github.com/index-tts/index-tts）
 - 模型权重通过 HuggingFace 下载到 `tts_service/models/IndexTTS-2` 或容器内 `/app/models/IndexTTS-2`（参考 `docs/startup-guide.md`）
+
+## Moonshine 说明
+
+- ASR 服务基于 Moonshine ONNX（依赖从 https://github.com/moonshine-ai/moonshine 的 `moonshine-onnx` 子目录安装）
+
+## 致谢
+
+- Moonshine: https://github.com/moonshine-ai/moonshine
+- IndexTTS2: https://github.com/index-tts/index-tts

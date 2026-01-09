@@ -1,20 +1,44 @@
 #!/bin/bash
-# E2E 验收脚本 - 测试完整的视频处理流程
+# E2E 验收脚本 - 测试完整的视频处理流程（真实翻译，无 mock）
 
-set -e
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 API_BASE="${API_BASE:-http://localhost:8080/api/v1}"
-TEST_VIDEO="${TEST_VIDEO:-test_video.mp4}"
+SOURCE_LANGUAGE="${SOURCE_LANGUAGE:-zh}"
+TARGET_LANGUAGE="${TARGET_LANGUAGE:-en}"
+TEST_VIDEO="${TEST_VIDEO:-$ROOT_DIR/test_vedio/test_video_10s.mp4}"
+GLM_API_KEY="${GLM_API_KEY:-}"
+
+if [ -z "$GLM_API_KEY" ] && [ -f "$ROOT_DIR/.env" ]; then
+    GLM_API_KEY="$(grep -E '^GLM_API_KEY=' "$ROOT_DIR/.env" | tail -n1 | cut -d= -f2- | tr -d '\r' | tr -d '"' | tr -d "'")"
+fi
+
+if [ -z "$GLM_API_KEY" ] || [ "$GLM_API_KEY" = "your_glm_api_key" ]; then
+    echo "错误: GLM_API_KEY 未设置（需要真实翻译，不使用 mock）。"
+    echo "请设置环境变量 GLM_API_KEY 或在 .env 中配置真实值。"
+    exit 1
+fi
 
 echo "=== E2E 测试脚本 ==="
 echo "API Base: $API_BASE"
 echo "测试视频: $TEST_VIDEO"
+echo "源语言: $SOURCE_LANGUAGE -> 目标语言: $TARGET_LANGUAGE"
 echo ""
 
 # 检查测试视频是否存在
 if [ ! -f "$TEST_VIDEO" ]; then
+    if [ -x "$SCRIPT_DIR/prepare_test_video.sh" ]; then
+        echo "未找到测试视频，尝试自动生成..."
+        "$SCRIPT_DIR/prepare_test_video.sh"
+    fi
+fi
+
+if [ ! -f "$TEST_VIDEO" ]; then
     echo "错误: 测试视频文件不存在: $TEST_VIDEO"
-    echo "请提供一个测试视频文件，或设置 TEST_VIDEO 环境变量"
+    echo "请提供测试视频文件，或运行 scripts/prepare_test_video.sh 生成"
     exit 1
 fi
 
@@ -22,8 +46,9 @@ fi
 echo "步骤 1: 创建任务..."
 TASK_RESPONSE=$(curl -s -X POST "$API_BASE/tasks" \
     -F "video=@$TEST_VIDEO" \
-    -F "source_language=zh" \
-    -F "target_language=en")
+    -F "source_language=$SOURCE_LANGUAGE" \
+    -F "target_language=$TARGET_LANGUAGE" \
+    -F "glm_api_key=$GLM_API_KEY")
 
 TASK_ID=$(echo "$TASK_RESPONSE" | grep -o '"task_id":"[^"]*"' | cut -d'"' -f4)
 
@@ -103,4 +128,3 @@ else
     echo "响应: $DOWNLOAD_RESPONSE"
     exit 1
 fi
-

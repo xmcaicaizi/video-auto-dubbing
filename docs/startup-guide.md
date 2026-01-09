@@ -19,6 +19,15 @@ git clone <repository-url>
 cd vedio
 ```
 
+## 2.1 一键 Docker 部署（推荐）
+
+```bash
+bash scripts/bootstrap.sh
+```
+
+脚本会自动复制 `env.example` 到 `.env`（如不存在）、下载 IndexTTS-2 权重，并执行 `docker compose up -d --build`。
+如需真实翻译，请在 `.env` 中填写 `GLM_API_KEY` 后再执行。
+
 ## 3. 配置环境变量（可选，但推荐）
 
 > 推荐在前端“设置”页面填写密钥；下述环境变量供容器启动前兜底使用。
@@ -90,7 +99,22 @@ curl http://localhost:8080/health
 curl http://localhost:8001/health
 ```
 
-## 6. 常见问题
+## 6. 真实 E2E 测试（10 秒样例）
+
+> 该测试不会使用 mock 数据，会走完整的 Moonshine + GLM + IndexTTS2 流程。
+
+```bash
+# 生成 10 秒测试视频（首次执行会拉取 ffmpeg 镜像）
+bash scripts/prepare_test_video.sh
+
+# 运行 E2E 测试（确保已配置 GLM_API_KEY）
+GLM_API_KEY=你的真实Key bash scripts/e2e_test.sh
+```
+
+默认使用 `test_vedio/test_video_10s.mp4`，如需指定视频或语言：
+`TEST_VIDEO=... SOURCE_LANGUAGE=zh TARGET_LANGUAGE=en bash scripts/e2e_test.sh`。
+
+## 7. 常见问题
 
 1. **Docker Engine 未运行**
    - 现象：`error during connect: open //./pipe/docker_engine: The system cannot find the file specified`
@@ -119,7 +143,7 @@ curl http://localhost:8001/health
 7. **构建或拉取失败（网络/apt 源）**
    - 处理：Dockerfile 已切换 apt 源为 HTTPS；若仍失败，请检查网络或配置代理。
 
-## 7. 停止、重启与重建
+## 8. 停止、重启与重建
 
 ```bash
 # 停止但保留数据
@@ -142,12 +166,12 @@ docker compose up -d --build
 docker compose up -d --build api
 ```
 
-## 8. 开发模式提示
+## 9. 开发模式提示
 
 - Go（API/Worker）：修改代码后可执行 `docker compose up -d --build api` 或 `worker` 触发重建；如使用 bind mount，请避免覆盖镜像内的构建产物。
 - Python（TTS）：修改代码后 `docker compose up -d --build tts_service`；谨慎挂载 `.venv` 以防依赖失效。
 
-## 9. 相关文档
+## 10. 相关文档
 
 - [文档索引](./README.md) — 指向架构、接口与开发规范
 - [系统架构设计](architecture.md) — 服务边界与任务流程

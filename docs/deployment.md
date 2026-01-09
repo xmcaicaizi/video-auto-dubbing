@@ -53,14 +53,20 @@ API_PORT=8080
 
 # TTS 鏈嶅姟閰嶇疆
 TTS_PORT=8000
-TTS_BACKEND=modelscope  # 鎴?mock锛堢敤浜庢祴璇曪級
-
-# ModelScope API 閰嶇疆锛堝繀濉級
-MODELSCOPE_TOKEN=your_modelscope_token  # 浠?https://modelscope.cn 鑾峰彇
-MODELSCOPE_MODEL_ID=IndexTeam/IndexTTS-2  # 鍙€夛紝榛樿鍊?
-STRICT_DURATION=false  # 鏄惁涓ユ牸瀵归綈鏃堕暱锛坱rue/false锛?
-MAX_CONCURRENT_REQUESTS=10  # 鏈€澶у苟鍙戣姹傛暟
-MAX_RETRIES=3  # API 璋冪敤鏈€澶ч噸璇曟鏁?
+TTS_BACKEND=index_tts2
+INDEXTTS_MODEL_DIR=/app/models/IndexTTS-2
+INDEXTTS_CFG_PATH=/app/models/IndexTTS-2/config.yaml
+INDEXTTS_PROMPT_AUDIO=/app/assets/voice_01.wav
+INDEXTTS_DEVICE=auto
+INDEXTTS_USE_FP16=true
+INDEXTTS_USE_TORCH_COMPILE=false
+INDEXTTS_USE_CUDA_KERNEL=false
+HF_ENDPOINT=https://hf-mirror.com
+HF_HUB_CACHE=/app/models/IndexTTS-2/hf_cache
+STRICT_DURATION=false  # true/false
+MAX_CONCURRENT_REQUESTS=10  # max concurrent requests
+MAX_RETRIES=3  # max retries
+RETRY_DELAY_SECONDS=1.0  # retry delay in seconds
 
 # 澶栭儴 API 閰嶇疆锛堟帹鑽愰€氳繃鍓嶇璁剧疆椤甸潰閰嶇疆锛岀幆澧冨彉閲忎綔涓哄悗澶囷級
 # Moonshine ASR 鏈嶅姟閰嶇疆
@@ -68,7 +74,7 @@ MAX_RETRIES=3  # API 璋冪敤鏈€澶ч噸璇曟鏁?
 ASR_MODEL_ID=moonshine-base
 ASR_DEVICE=cuda
 ASR_COMPUTE_TYPE=float16
-ASR_BACKEND=moonshine
+ASR_BACKEND=moonshine_onnx
 
 # 鏅鸿氨 GLM 缈昏瘧 API 閰嶇疆
 GLM_API_KEY=your_glm_api_key
@@ -352,5 +358,5 @@ docker compose logs -f worker
 4. **TTS 鏈嶅姟浼樺寲**
    - 璋冩暣 `MAX_CONCURRENT_REQUESTS` 閬垮厤瑙﹀彂 API 闄愭祦
    - 鏍规嵁闇€姹傞€夋嫨 `STRICT_DURATION` 妯″紡锛堣川閲?vs 鏃堕暱绮剧‘搴︼級
-   - 鐩戞帶 ModelScope API 璋冪敤閰嶉鍜岄檺娴佹儏鍐?
+   - 鐩戞帶 IndexTTS2 ?? 璋冪敤閰嶉鍜岄檺娴佹儏鍐?
    - 浼樺寲鎵瑰鐞嗗ぇ灏忥紙鍒嗘鍚堟垚锛?

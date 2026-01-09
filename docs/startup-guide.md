@@ -27,17 +27,31 @@ cd vedio
 - `GLM_API_URL`: GLM API 地址（默认 `https://open.bigmodel.cn/api/paas/v4/chat/completions`）
 - `GLM_MODEL`: GLM 模型名（默认 `glm-4.5`）
 - `GLM_RPS`: GLM 每秒请求数上限（默认 5）
-- `MODELSCOPE_TOKEN`: ModelScope API Token
 - `ASR_SERVICE_URL`: Moonshine ASR 服务地址（默认 `http://localhost:8002`）
 - `ASR_MODEL_ID`: Moonshine 模型 ID（默认 `moonshine-base`）
 - `ASR_DEVICE`: 运行设备（默认 `cuda`）
 - `ASR_COMPUTE_TYPE`: 推理精度（默认 `float16`）
-- `ASR_BACKEND`: ASR 后端（默认 `moonshine`）
+- `ASR_BACKEND`: ASR 后端（默认 `moonshine_onnx`）
+- `TTS_BACKEND`: TTS 后端（默认 `index_tts2`，本地推理）
+- `INDEXTTS_MODEL_DIR`: IndexTTS2 模型目录（默认 `/app/models/IndexTTS-2`）
+- `INDEXTTS_CFG_PATH`: IndexTTS2 配置文件（默认 `/app/models/IndexTTS-2/config.yaml`）
+- `HF_ENDPOINT`: HuggingFace 访问地址（可选，默认 `https://hf-mirror.com`）
+- `HF_HUB_CACHE`: HuggingFace 缓存目录（默认 `/app/models/IndexTTS-2/hf_cache`）
 - `MINIO_PUBLIC_ENDPOINT`: MinIO 外部可访问地址（ASR 服务不在同一网络时使用）
 
 若环境支持 dotfile，可将 `env.example` 复制为 `.env` 并按需修改；否则请在宿主机或 CI 中设置为系统环境变量。
 
-## 4. 启动与验证
+## 4. 下载 IndexTTS-2 模型权重（必需）
+
+IndexTTS2 使用本地推理，需要提前拉取模型权重到 TTS 容器的模型目录。推荐通过容器直接下载到持久化卷：
+
+```bash
+docker compose run --rm tts_service python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='IndexTeam/IndexTTS-2', local_dir='/app/models/IndexTTS-2', local_dir_use_symlinks=False)"
+```
+
+如需走镜像站点，确保 `.env` 中配置 `HF_ENDPOINT`，或在命令前设置环境变量。
+
+## 5. 启动与验证
 
 ```bash
 # 启动全部服务
@@ -76,7 +90,7 @@ curl http://localhost:8080/health
 curl http://localhost:8001/health
 ```
 
-## 5. 常见问题
+## 6. 常见问题
 
 1. **Docker Engine 未运行**
    - 现象：`error during connect: open //./pipe/docker_engine: The system cannot find the file specified`
@@ -105,7 +119,7 @@ curl http://localhost:8001/health
 7. **构建或拉取失败（网络/apt 源）**
    - 处理：Dockerfile 已切换 apt 源为 HTTPS；若仍失败，请检查网络或配置代理。
 
-## 6. 停止、重启与重建
+## 7. 停止、重启与重建
 
 ```bash
 # 停止但保留数据
@@ -128,12 +142,12 @@ docker compose up -d --build
 docker compose up -d --build api
 ```
 
-## 7. 开发模式提示
+## 8. 开发模式提示
 
 - Go（API/Worker）：修改代码后可执行 `docker compose up -d --build api` 或 `worker` 触发重建；如使用 bind mount，请避免覆盖镜像内的构建产物。
 - Python（TTS）：修改代码后 `docker compose up -d --build tts_service`；谨慎挂载 `.venv` 以防依赖失效。
 
-## 8. 相关文档
+## 9. 相关文档
 
 - [文档索引](./README.md) — 指向架构、接口与开发规范
 - [系统架构设计](architecture.md) — 服务边界与任务流程

@@ -38,7 +38,6 @@ type CreateTaskRequest struct {
 	GLMAPIKey       string `form:"glm_api_key" binding:"omitempty"`
 	GLMAPIURL       string `form:"glm_api_url" binding:"omitempty"`
 	GLMModel        string `form:"glm_model" binding:"omitempty"`
-	ModelScopeToken string `form:"modelscope_token" binding:"omitempty"`
 }
 
 // CreateTaskResponse represents the response for creating a task.
@@ -87,7 +86,6 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 		GLMAPIKey:       req.GLMAPIKey,
 		GLMAPIURL:       req.GLMAPIURL,
 		GLMModel:        req.GLMModel,
-		ModelScopeToken: req.ModelScopeToken,
 	})
 	if err != nil {
 		h.logger.Error("Failed to create task", zap.Error(err))

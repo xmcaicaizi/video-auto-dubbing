@@ -39,7 +39,6 @@ CREATE TABLE IF NOT EXISTS tasks (
     glm_api_key TEXT,
     glm_api_url TEXT,
     glm_model TEXT,
-    modelscope_token TEXT,
     output_video_key VARCHAR(255),
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -57,8 +56,7 @@ ALTER TABLE tasks
     ADD COLUMN IF NOT EXISTS asr_api_key TEXT,
     ADD COLUMN IF NOT EXISTS glm_api_key TEXT,
     ADD COLUMN IF NOT EXISTS glm_api_url TEXT,
-    ADD COLUMN IF NOT EXISTS glm_model TEXT,
-    ADD COLUMN IF NOT EXISTS modelscope_token TEXT;
+    ADD COLUMN IF NOT EXISTS glm_model TEXT;
 `
 
 const createTaskStepsTable = `

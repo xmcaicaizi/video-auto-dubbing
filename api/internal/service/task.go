@@ -33,7 +33,6 @@ type CreateTaskOptions struct {
 	GLMAPIKey       string
 	GLMAPIURL       string
 	GLMModel        string
-	ModelScopeToken string
 }
 
 func toNullString(s string) sql.NullString {
@@ -90,7 +89,6 @@ func (s *TaskService) CreateTask(ctx context.Context, file *multipart.FileHeader
 		GLMAPIKey:       nil,
 		GLMAPIURL:       nil,
 		GLMModel:        nil,
-		ModelScopeToken: nil,
 		CreatedAt:       time.Now(),
 		UpdatedAt:       time.Now(),
 	}
@@ -101,7 +99,6 @@ func (s *TaskService) CreateTask(ctx context.Context, file *multipart.FileHeader
 			source_video_key, source_language, target_language,
 			asr_appid, asr_token, asr_cluster, asr_api_key,
 			glm_api_key, glm_api_url, glm_model,
-			modelscope_token,
 			created_at, updated_at
 		)
 		VALUES (
@@ -109,8 +106,7 @@ func (s *TaskService) CreateTask(ctx context.Context, file *multipart.FileHeader
 			$4, $5, $6,
 			$7, $8, $9, $10,
 			$11, $12, $13,
-			$14,
-			$15, $16
+			$14, $15
 		)
 	`
 	if _, err := s.db.ExecContext(ctx, query,
@@ -118,7 +114,6 @@ func (s *TaskService) CreateTask(ctx context.Context, file *multipart.FileHeader
 		task.SourceLanguage, task.TargetLanguage,
 		toNullString(opts.ASRAppID), toNullString(opts.ASRToken), toNullString(opts.ASRCluster), toNullString(opts.ASRAPIKey),
 		toNullString(opts.GLMAPIKey), toNullString(opts.GLMAPIURL), toNullString(opts.GLMModel),
-		toNullString(opts.ModelScopeToken),
 		task.CreatedAt, task.UpdatedAt,
 	); err != nil {
 		return nil, fmt.Errorf("failed to create task: %w", err)
@@ -139,7 +134,6 @@ func (s *TaskService) GetTaskWithSteps(ctx context.Context, taskID uuid.UUID) (*
 		SELECT id, status, progress, error, source_video_key, source_language, target_language,
 		       asr_appid, asr_token, asr_cluster, asr_api_key,
 		       glm_api_key, glm_api_url, glm_model,
-		       modelscope_token,
 		       output_video_key, created_at, updated_at
 		FROM tasks WHERE id = $1
 	`
@@ -148,7 +142,6 @@ func (s *TaskService) GetTaskWithSteps(ctx context.Context, taskID uuid.UUID) (*
 		&task.SourceVideoKey, &task.SourceLanguage, &task.TargetLanguage,
 		&task.ASRAppID, &task.ASRToken, &task.ASRCluster, &task.ASRAPIKey,
 		&task.GLMAPIKey, &task.GLMAPIURL, &task.GLMModel,
-		&task.ModelScopeToken,
 		&task.OutputVideoKey, &task.CreatedAt, &task.UpdatedAt,
 	)
 	if err != nil {

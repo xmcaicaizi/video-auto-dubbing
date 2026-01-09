@@ -317,7 +317,6 @@
             document.getElementById('glm_api_key').value = s.glm_api_key || '';
             document.getElementById('glm_model').value = s.glm_model || 'glm-4.5';
             document.getElementById('glm_api_url').value = s.glm_api_url || 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
-            document.getElementById('modelscope_token').value = s.modelscope_token || '';
             document.getElementById('settingsPanel').style.display = 'block';
         }
 
@@ -334,7 +333,6 @@
                 glm_api_key: (document.getElementById('glm_api_key').value || '').trim(),
                 glm_model: (document.getElementById('glm_model').value || 'glm-4.5').trim(),
                 glm_api_url: (document.getElementById('glm_api_url').value || 'https://open.bigmodel.cn/api/paas/v4/chat/completions').trim(),
-                modelscope_token: (document.getElementById('modelscope_token').value || '').trim(),
             };
             setSettings(next);
             closeSettings();
@@ -368,7 +366,6 @@
             if (settings.glm_api_key) formData.append('glm_api_key', settings.glm_api_key);
             if (settings.glm_model) formData.append('glm_model', settings.glm_model);
             if (settings.glm_api_url) formData.append('glm_api_url', settings.glm_api_url);
-            if (settings.modelscope_token) formData.append('modelscope_token', settings.modelscope_token);
 
             try {
                 const response = await fetch(`${API_BASE}/tasks`, {
@@ -571,7 +568,6 @@ document.getElementById('videoFile').addEventListener('change', function(e) {
                 <div class="form-group"><label>GLM API Key</label><input id="glm_api_key" placeholder="your_glm_api_key" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
                 <div class="form-group"><label>GLM API URL</label><input id="glm_api_url" placeholder="https://open.bigmodel.cn/api/paas/v4/chat/completions" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
                 <div class="form-group"><label>GLM Model</label><input id="glm_model" placeholder="glm-4.5" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
-                <div class="form-group"><label>ModelScope Token</label><input id="modelscope_token" placeholder="your_modelscope_token" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
                 <div class="settings-actions">
                     <button class="btn" onclick="closeSettings()">取消</button>
                     <button class="upload-btn" onclick="saveSettings()">保存</button>

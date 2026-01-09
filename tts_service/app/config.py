@@ -11,10 +11,8 @@ class Settings(BaseSettings):
     tts_port: int = 8000
     tts_workers: int = 1
 
-    # ModelScope configuration
-    modelscope_token: str = ""  # ModelScope API token (optional for public models)
-    modelscope_model_id: str = "IndexTeam/IndexTTS-2"  # Model ID on ModelScope
-    tts_backend: str = "index_tts2"  # Backend: "index_tts2", "modelscope", or "mock"
+    # TTS backend configuration
+    tts_backend: str = "index_tts2"  # Backend: "index_tts2"
     strict_duration: bool = False  # Whether to strictly enforce target_duration_ms
 
     # IndexTTS2 local inference configuration
@@ -26,11 +24,6 @@ class Settings(BaseSettings):
     indextts_use_torch_compile: bool = False
     indextts_use_cuda_kernel: bool = False
 
-    # Legacy model configuration (deprecated, kept for backward compatibility)
-    model_path: str = "./models/index_tts2"
-    speaker_embedding_path: str = "./models/speaker_embeddings"
-    device: str = "cpu"  # cuda or cpu
-
     # Audio settings
     default_sample_rate: int = 22050
     default_format: str = "wav"
@@ -41,7 +34,7 @@ class Settings(BaseSettings):
 
     # Concurrency and retry settings
     max_concurrent_requests: int = 10  # Max concurrent TTS requests
-    max_retries: int = 3  # Max retries for ModelScope API calls
+    max_retries: int = 3  # Max retries for synthesis attempts
     retry_delay_seconds: float = 1.0  # Delay between retries
 
     model_config = SettingsConfigDict(

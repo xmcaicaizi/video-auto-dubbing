@@ -28,8 +28,6 @@ async def startup_event() -> None:
     logger.info("Starting ASR service...")
     Path(settings.audio_temp_dir).mkdir(parents=True, exist_ok=True)
     try:
-        if settings.asr_backend == "mock":
-            logger.warning("ASR running in mock mode")
         transcriber.load_model()
         logger.info("ASR service started successfully")
     except Exception as exc:

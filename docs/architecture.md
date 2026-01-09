@@ -58,12 +58,12 @@
 
 #### 1.2.4 TTS 服务（tts_service/）
 **职责：**
-- 通过 ModelScope API 调用 IndexTTS-2 模型进行语音合成
+- 基于本地部署的 IndexTTS2 进行语音合成（模型权重来自 HuggingFace）
 - 接收文本和时间轴约束参数
 - 返回合成音频
-- 作为适配层，封装 ModelScope API 调用细节
+- 作为适配层，封装 IndexTTS2 推理调用细节
 
-**技术栈：** Python + FastAPI + uv + ModelScope SDK
+**技术栈：** Python + FastAPI + uv + IndexTTS2
 
 ### 1.3 服务通信方式
 
@@ -88,7 +88,7 @@
 - 负责步骤级重试、失败回退与进度上报
 
 ### 2.3 TTS 服务（`tts_service/`）
-- 通过 ModelScope API 调用 IndexTTS-2 进行受时间轴约束的语音合成
+- 本地加载 IndexTTS2 权重进行受时间轴约束的语音合成
 - 返回合成音频并写入对象存储
 
 ### 2.4 基础设施

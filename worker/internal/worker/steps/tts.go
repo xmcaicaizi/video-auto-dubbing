@@ -61,7 +61,7 @@ func (p *TTSProcessor) Process(ctx context.Context, taskID uuid.UUID, msg models
 		return err
 	}
 
-	targetLang, modelscopeToken, err := p.loadTaskLanguage(ctx, taskID)
+	targetLang, err := p.loadTaskLanguage(ctx, taskID)
 	if err != nil {
 		return err
 	}
@@ -99,7 +99,7 @@ func (p *TTSProcessor) Process(ctx context.Context, taskID uuid.UUID, msg models
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			if err := p.processSegmentWithRetry(ctx, taskID, segment, targetLang, modelscopeToken, promptInfo, maxRetries, retryDelay); err != nil {
+			if err := p.processSegmentWithRetry(ctx, taskID, segment, targetLang, promptInfo, maxRetries, retryDelay); err != nil {
 				p.deps.Logger.Error("TTS segment failed after retries", zap.String("task_id", taskID.String()), zap.Int("segment_idx", segment.idx), zap.Error(err))
 				_ = p.publishCompensation(ctx, taskID, segment.idx, err)
 				mu.Lock()
@@ -144,14 +144,13 @@ func (p *TTSProcessor) Process(ctx context.Context, taskID uuid.UUID, msg models
 	return p.tryFinalizeTTS(ctx, taskID)
 }
 
-func (p *TTSProcessor) loadTaskLanguage(ctx context.Context, taskID uuid.UUID) (string, *string, error) {
+func (p *TTSProcessor) loadTaskLanguage(ctx context.Context, taskID uuid.UUID) (string, error) {
 	var targetLang string
-	var modelscopeToken *string
-	query := `SELECT target_language, modelscope_token FROM tasks WHERE id = $1`
-	if err := p.deps.DB.QueryRowContext(ctx, query, taskID).Scan(&targetLang, &modelscopeToken); err != nil {
-		return "", nil, fmt.Errorf("failed to get task target language: %w", err)
+	query := `SELECT target_language FROM tasks WHERE id = $1`
+	if err := p.deps.DB.QueryRowContext(ctx, query, taskID).Scan(&targetLang); err != nil {
+		return "", fmt.Errorf("failed to get task target language: %w", err)
 	}
-	return targetLang, modelscopeToken, nil
+	return targetLang, nil
 }
 
 type ttsSegment struct {
@@ -269,7 +268,7 @@ func (p *TTSProcessor) resolveRetryDelay(payload models.TTSPayload) time.Duratio
 	return 2 * time.Second
 }
 
-func (p *TTSProcessor) processSegmentWithRetry(ctx context.Context, taskID uuid.UUID, segment ttsSegment, targetLang string, modelscopeToken *string, promptInfo promptInfo, maxRetries int, retryDelay time.Duration) error {
+func (p *TTSProcessor) processSegmentWithRetry(ctx context.Context, taskID uuid.UUID, segment ttsSegment, targetLang string, promptInfo promptInfo, maxRetries int, retryDelay time.Duration) error {
 	existingKey, err := p.getExistingSegmentAudio(ctx, taskID, segment.idx)
 	if err == nil && existingKey != "" {
 		p.deps.Logger.Info("Segment already synthesized, skipping", zap.String("task_id", taskID.String()), zap.Int("segment_idx", segment.idx), zap.String("tts_audio_key", existingKey))
@@ -281,7 +280,7 @@ func (p *TTSProcessor) processSegmentWithRetry(ctx context.Context, taskID uuid.
 		if attempt > 0 {
 			time.Sleep(retryDelay)
 		}
-		if err := p.processSingleSegment(ctx, taskID, segment, targetLang, modelscopeToken, promptInfo); err != nil {
+		if err := p.processSingleSegment(ctx, taskID, segment, targetLang, promptInfo); err != nil {
 			lastErr = err
 			p.deps.Logger.Warn("Segment TTS attempt failed", zap.String("task_id", taskID.String()), zap.Int("segment_idx", segment.idx), zap.Int("attempt", attempt+1), zap.Error(err))
 			continue
@@ -291,7 +290,7 @@ func (p *TTSProcessor) processSegmentWithRetry(ctx context.Context, taskID uuid.
 	return lastErr
 }
 
-func (p *TTSProcessor) processSingleSegment(ctx context.Context, taskID uuid.UUID, segment ttsSegment, targetLang string, modelscopeToken *string, promptInfo promptInfo) error {
+func (p *TTSProcessor) processSingleSegment(ctx context.Context, taskID uuid.UUID, segment ttsSegment, targetLang string, promptInfo promptInfo) error {
 	if strings.TrimSpace(segment.text) == "" {
 		return fmt.Errorf("segment %d has empty text", segment.idx)
 	}
@@ -307,11 +306,7 @@ func (p *TTSProcessor) processSingleSegment(ctx context.Context, taskID uuid.UUI
 		SampleRate:       22050,
 	}
 
-	token := ""
-	if modelscopeToken != nil {
-		token = *modelscopeToken
-	}
-	audioReader, err := p.deps.TTSClient.Synthesize(ctx, ttsReq, token)
+	audioReader, err := p.deps.TTSClient.Synthesize(ctx, ttsReq)
 	if err != nil {
 		return fmt.Errorf("TTS API call failed: %w", err)
 	}
@@ -756,6 +751,39 @@ func (p *TTSProcessor) mergeSegmentAudios(ctx context.Context, taskID uuid.UUID)
 
 	if len(segments) == 0 {
 		return fmt.Errorf("no segments found")
+	}
+
+	// Fast path: single segment needs no concat. This avoids ffmpeg concat edge-cases and
+	// makes smoke tests (e.g. 10s video) much faster and more reliable.
+	if len(segments) == 1 {
+		seg := segments[0]
+		audioReader, err := p.deps.Storage.GetObject(ctx, seg.ttsAudioKey)
+		if err != nil {
+			return fmt.Errorf("failed to get segment audio %d: %w", seg.idx, err)
+		}
+		defer audioReader.Close()
+
+		audioData, err := io.ReadAll(audioReader)
+		if err != nil {
+			return fmt.Errorf("failed to read segment audio %d: %w", seg.idx, err)
+		}
+		if len(audioData) == 0 {
+			return fmt.Errorf("segment %d audio is empty", seg.idx)
+		}
+
+		dubKey := fmt.Sprintf("tts/%s/dub.wav", taskID)
+		if err := p.deps.Storage.PutObject(ctx, dubKey, bytes.NewReader(audioData), int64(len(audioData)), "audio/wav"); err != nil {
+			return fmt.Errorf("failed to upload merged audio: %w", err)
+		}
+
+		p.deps.Logger.Info("Segment audios merged successfully",
+			zap.String("task_id", taskID.String()),
+			zap.String("dub_key", dubKey),
+			zap.Int("segment_count", 1),
+			zap.Int("segment_idx", seg.idx),
+			zap.Int("file_size", len(audioData)),
+		)
+		return nil
 	}
 
 	// Download all segment audio files to temp directory

@@ -24,7 +24,7 @@
 
 - ✅ **机器翻译**: 利用 GLM 模型进行跨语言翻译
 
-- ✅ **可控 TTS**: 通过魔搭(ModelScope)社区的 IndexTTS-2 API 实现受时间轴约束的可控语音合成
+- ✅ **可控 TTS**: 基于本地部署的 IndexTTS2（代码来自 GitHub，权重从 HuggingFace 拉取）实现受时间轴约束的可控语音合成
 
 - ✅ **音画同步**: 通过时间轴约束解决跨语言配音时音画不同步的问题
 
@@ -62,7 +62,7 @@
 
 - **依赖管理**: uv
 
-- **模型**: IndexTTS-2（通过 ModelScope API 调用）
+- **模型**: IndexTTS-2（本地推理，权重从 HuggingFace 拉取）
 
 
 
@@ -83,7 +83,8 @@
 1. 安装 Docker Engine 20.10+ 与 Docker Compose 2.0+，预留 8GB 内存 / 50GB 磁盘。
 2. 克隆仓库并进入目录：`git clone <repository-url> && cd vedio`。
 3. （可选）根据 `env.example` 配置 API Key、模型与存储等环境变量。
-4. 启动并验证：`docker compose up -d && docker compose ps`，前端访问 `http://localhost`，API 健康检查 `http://localhost:8080/health`。
+4. 下载 IndexTTS-2 模型权重（见 `docs/startup-guide.md`）。
+5. 启动并验证：`docker compose up -d && docker compose ps`，前端访问 `http://localhost`，API 健康检查 `http://localhost:8080/health`。
 
 - **MinIO 控制台**: http://localhost:9001
 
@@ -441,6 +442,5 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 
 
-- TTS 服务使用的 IndexTTS2 模型代码位于 `tts_service/indextts` 目录
-
-- `_vendor/` 目录包含第三方依赖，不应提交到 Git
+- TTS 服务使用的 IndexTTS2 代码位于 `tts_service/indextts`（来自 GitHub 上游仓库）
+- 模型权重通过 HuggingFace 下载到 `tts_service/models/IndexTTS-2` 或容器内 `/app/models/IndexTTS-2`（参考 `docs/startup-guide.md`）

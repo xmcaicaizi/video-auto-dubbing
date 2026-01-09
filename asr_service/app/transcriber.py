@@ -72,9 +72,6 @@ class MoonshineONNXTranscriber:
         self._lock = threading.Lock()
 
     def load_model(self) -> None:
-        if settings.asr_backend == "mock":
-            self._model_loaded = True
-            return
         with self._lock:
             if self._model_loaded:
                 return
@@ -102,13 +99,6 @@ class MoonshineONNXTranscriber:
     def transcribe(self, audio_url: str, language: str | None) -> Dict[str, Any]:
         if not self._model_loaded:
             raise ModelNotLoadedError("ASR model is not loaded")
-
-        if settings.asr_backend == "mock":
-            return {
-                "segments": [{"start_ms": 0, "end_ms": 1000, "text": "mock transcription"}],
-                "language": language or "unknown",
-                "duration_ms": 1000,
-            }
 
         import moonshine_onnx
 

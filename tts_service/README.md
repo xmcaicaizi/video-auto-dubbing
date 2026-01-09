@@ -31,6 +31,14 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 cp .env.example .env
 ```
 
+### 模型权重
+
+IndexTTS2 使用本地推理模型权重。请提前从 HuggingFace 下载到 `INDEXTTS_MODEL_DIR`：
+
+```bash
+python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='IndexTeam/IndexTTS-2', local_dir='models/IndexTTS-2', local_dir_use_symlinks=False)"
+```
+
 ### API 文档
 
 启动服务后访问：

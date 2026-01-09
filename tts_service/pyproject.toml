@@ -1,7 +1,7 @@
 [project]
 name = "tts-service"
 version = "0.1.0"
-description = "IndexTTS2 based TTS service for video dubbing via ModelScope API"
+description = "IndexTTS2 based TTS service for video dubbing (local inference)"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.104.0",

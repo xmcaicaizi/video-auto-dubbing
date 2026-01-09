@@ -55,7 +55,7 @@ func NewClient(cfg config.TTSConfig, logger *zap.Logger) *Client {
 }
 
 // Synthesize performs TTS synthesis.
-func (c *Client) Synthesize(ctx context.Context, req SynthesisRequest, modelScopeToken string) (io.ReadCloser, error) {
+func (c *Client) Synthesize(ctx context.Context, req SynthesisRequest) (io.ReadCloser, error) {
 	// Create request body
 	bodyBytes, err := json.Marshal(req)
 	if err != nil {
@@ -72,9 +72,6 @@ func (c *Client) Synthesize(ctx context.Context, req SynthesisRequest, modelScop
 	// Set headers
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json")
-	if modelScopeToken != "" {
-		httpReq.Header.Set("X-ModelScope-Token", modelScopeToken)
-	}
 
 	// Make request with retry
 	var resp *http.Response
@@ -90,9 +87,6 @@ func (c *Client) Synthesize(ctx context.Context, req SynthesisRequest, modelScop
 			httpReq, _ = http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(bodyBytes))
 			httpReq.Header.Set("Content-Type", "application/json")
 			httpReq.Header.Set("Accept", "application/json")
-			if modelScopeToken != "" {
-				httpReq.Header.Set("X-ModelScope-Token", modelScopeToken)
-			}
 		}
 	}
 

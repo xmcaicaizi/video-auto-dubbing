@@ -2,14 +2,14 @@
 
 ## 服务概述
 
-TTS 服务通过魔搭(ModelScope)社区的 IndexTTS-2 API 提供语音合成能力，提供 HTTP REST API 接口，支持时间轴约束的可控语音合成。
+TTS 服务基于本地部署的 IndexTTS2 提供语音合成能力，模型权重从 HuggingFace 拉取，提供 HTTP REST API 接口，支持时间轴约束的可控语音合成。
 
 ## 技术栈
 
 - **框架**: FastAPI
 - **运行时**: Python 3.11+
 - **依赖管理**: uv
-- **模型**: IndexTTS-2（通过 ModelScope API 调用）
+- **模型**: IndexTTS-2（本地推理，权重来自 HuggingFace）
 
 ## 工程结构
 
@@ -22,7 +22,7 @@ tts_service/
 │   ├── __init__.py
 │   ├── main.py             # FastAPI 应用入口
 │   ├── models.py           # 数据模型
-│   ├── synthesizer.py      # ModelScope API 封装
+│   ├── synthesizer.py      # IndexTTS2 本地推理封装
 │   ├── config.py           # 配置管理
 │   └── exceptions.py       # 异常定义
 └── Dockerfile
@@ -357,18 +357,23 @@ uv sync --frozen  # 使用 uv.lock 锁定版本
 ### 环境变量配置
 
 **必需配置**:
-- `MODELSCOPE_TOKEN`: ModelScope API 访问令牌（必需）
-  - 获取方式：登录 [ModelScope 官网](https://modelscope.cn)，在个人设置中生成 API Token
-  - **重要**: 不要将 token 提交到 git 仓库
+- `INDEXTTS_MODEL_DIR`: IndexTTS2 模型目录（需提前下载权重）
+- `INDEXTTS_CFG_PATH`: IndexTTS2 配置文件路径（默认 `config.yaml`）
 
 **可选配置**:
-- `MODELSCOPE_MODEL_ID`: ModelScope 模型 ID（默认: `IndexTeam/IndexTTS-2`）
-- `TTS_BACKEND`: 后端模式，`modelscope` 或 `mock`（默认: `modelscope`）
+- `TTS_BACKEND`: 后端模式（默认: `index_tts2`）
+- `INDEXTTS_PROMPT_AUDIO`: 默认提示音频路径（用于无 prompt_audio_url 时兜底）
+- `INDEXTTS_DEVICE`: 推理设备（`auto`/`cpu`/`cuda`）
+- `INDEXTTS_USE_FP16`: 是否启用 FP16
+- `INDEXTTS_USE_TORCH_COMPILE`: 是否启用 torch.compile
+- `INDEXTTS_USE_CUDA_KERNEL`: 是否启用自定义 CUDA kernel
+- `HF_ENDPOINT`: HuggingFace 访问地址（可选镜像）
+- `HF_HUB_CACHE`: HuggingFace 缓存目录
 - `STRICT_DURATION`: 是否严格对齐目标时长（默认: `false`）
   - `true`: 使用音频时间拉伸强制对齐，可能影响音质
   - `false`: 返回自然时长，质量优先
 - `MAX_CONCURRENT_REQUESTS`: 最大并发请求数（默认: `10`）
-- `MAX_RETRIES`: API 调用最大重试次数（默认: `3`）
+- `MAX_RETRIES`: 最大重试次数（默认: `3`）
 - `RETRY_DELAY_SECONDS`: 重试延迟（秒，默认: `1.0`）
 
 **服务配置**:
@@ -383,14 +388,21 @@ uv sync --frozen  # 使用 uv.lock 锁定版本
 ### 配置示例
 
 ```env
-# ModelScope API 配置（必需）
-MODELSCOPE_TOKEN=your_modelscope_token_here
-MODELSCOPE_MODEL_ID=IndexTeam/IndexTTS-2
+# IndexTTS2 模型配置（必需）
+INDEXTTS_MODEL_DIR=/app/models/IndexTTS-2
+INDEXTTS_CFG_PATH=/app/models/IndexTTS-2/config.yaml
 
 # TTS 服务配置
 TTS_HOST=0.0.0.0
 TTS_PORT=8000
-TTS_BACKEND=modelscope
+TTS_BACKEND=index_tts2
+INDEXTTS_PROMPT_AUDIO=/app/assets/voice_01.wav
+INDEXTTS_DEVICE=auto
+INDEXTTS_USE_FP16=true
+INDEXTTS_USE_TORCH_COMPILE=false
+INDEXTTS_USE_CUDA_KERNEL=false
+HF_ENDPOINT=https://hf-mirror.com
+HF_HUB_CACHE=/app/models/IndexTTS-2/hf_cache
 STRICT_DURATION=false
 
 # 并发和重试配置
@@ -416,9 +428,6 @@ AUDIO_TEMP_RETENTION_HOURS=24
 | `invalid_parameter` | 400 | 参数错误 |
 | `text_too_long` | 400 | 文本过长 |
 | `duration_mismatch` | 400 | 时长不匹配 |
-| `authentication_error` | 401 | ModelScope 认证失败（token 无效） |
-| `rate_limit_error` | 429 | API 调用频率超限 |
-| `modelscope_api_error` | 502 | ModelScope API 调用失败 |
 | `model_not_loaded` | 503 | 模型未加载 |
 | `synthesis_failed` | 500 | 合成失败 |
 | `internal_error` | 500 | 内部错误 |
@@ -437,23 +446,20 @@ AUDIO_TEMP_RETENTION_HOURS=24
 
 ## 性能优化建议
 
-1. **并发控制**: 通过 `MAX_CONCURRENT_REQUESTS` 限制并发请求数，避免触发 API 限流
+1. **并发控制**: 通过 `MAX_CONCURRENT_REQUESTS` 限制并发请求数，避免 GPU/CPU 过载
 2. **批处理**: 支持批量合成减少调用次数
 3. **缓存**: 相同文本和参数的合成结果可以缓存（待实现）
-4. **重试机制**: 自动重试失败的 API 调用，支持指数退避
+4. **重试机制**: 自动重试失败的合成请求，支持指数退避
 5. **时长策略**: 根据需求选择 `STRICT_DURATION` 模式
    - 质量优先：`STRICT_DURATION=false`（推荐）
    - 时长精确：`STRICT_DURATION=true`（可能影响音质）
 
 ## 部署注意事项
 
-1. **API Token**: 必须配置 `MODELSCOPE_TOKEN` 环境变量
-   - 从 [ModelScope 官网](https://modelscope.cn) 获取
-   - 不要在代码或配置文件中硬编码 token
-   - 使用环境变量或密钥管理服务
-2. **配额管理**: 注意 ModelScope API 的调用配额和限流策略
-3. **网络访问**: 确保服务可以访问 ModelScope API（可能需要代理）
-4. **资源限制**: 设置合适的内存和 CPU 限制
+1. **模型权重**: 确保 IndexTTS2 权重已下载到 `INDEXTTS_MODEL_DIR`
+2. **HuggingFace 访问**: 如需镜像或代理，请配置 `HF_ENDPOINT`；私有模型需配置 HF Token
+3. **存储与缓存**: 为模型目录与 `HF_HUB_CACHE` 预留足够磁盘空间
+4. **资源限制**: 设置合适的内存、CPU 与 GPU 限制
 5. **健康检查**: 实现 `/health` 接口用于容器健康检查
-6. **日志脱敏**: 确保日志中不包含 API token 等敏感信息
+6. **日志脱敏**: 确保日志中不包含敏感信息
 

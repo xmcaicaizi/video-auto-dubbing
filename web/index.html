@@ -258,31 +258,8 @@
 
         <div class="upload-section" id="uploadSection">
             <h2>上传视频文件</h2>
-            <input type="file" id="videoFile" accept="video/*">
-            <button class="upload-btn" onclick="
-        // ????
-        async function deleteTask(taskId) {
-            if (!confirm('????????????????????')) {
-                return;
-            }
-
-            try {
-                const response = await fetch(`${API_BASE}/tasks/${taskId}`, {
-                    method: 'DELETE'
-                });
-                const data = await response.json();
-
-                if (data.code === 0) {
-                    loadTasks();
-                } else {
-                    alert('????: ' + data.message);
-                }
-            } catch (error) {
-                alert('????: ' + error.message);
-            }
-        }
-
-document.getElementById('videoFile').click()">选择视频文件</button>
+            <input type="file" id="videoFile" accept="video/*,.mkv,video/x-matroska">
+            <button class="upload-btn" onclick="document.getElementById('videoFile').click()">选择视频文件</button>
             <span id="fileName"></span>
 
             <div class="form-group">
@@ -366,30 +343,7 @@ document.getElementById('videoFile').click()">选择视频文件</button>
 
         // 上传视频
         async function uploadVideo() {
-            const fileInput = 
-        // ????
-        async function deleteTask(taskId) {
-            if (!confirm('????????????????????')) {
-                return;
-            }
-
-            try {
-                const response = await fetch(`${API_BASE}/tasks/${taskId}`, {
-                    method: 'DELETE'
-                });
-                const data = await response.json();
-
-                if (data.code === 0) {
-                    loadTasks();
-                } else {
-                    alert('????: ' + data.message);
-                }
-            } catch (error) {
-                alert('????: ' + error.message);
-            }
-        }
-
-document.getElementById('videoFile');
+            const fileInput = document.getElementById('videoFile');
             const sourceLang = document.getElementById('sourceLang').value;
             const targetLang = document.getElementById('targetLang').value;
             const submitBtn = document.getElementById('submitBtn');
@@ -570,9 +524,8 @@ document.getElementById('videoFile');
 
         // 文件选择处理
         
-        // ????
         async function deleteTask(taskId) {
-            if (!confirm('????????????????????')) {
+            if (!confirm('确定要删除该任务吗？此操作不可撤销。')) {
                 return;
             }
 
@@ -585,10 +538,10 @@ document.getElementById('videoFile');
                 if (data.code === 0) {
                     loadTasks();
                 } else {
-                    alert('????: ' + data.message);
+                    alert('删除失败: ' + data.message);
                 }
             } catch (error) {
-                alert('????: ' + error.message);
+                alert('删除失败: ' + error.message);
             }
         }
 

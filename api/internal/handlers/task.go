@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"vedio/api/internal/models"
 	"vedio/api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -120,6 +121,13 @@ func (h *TaskHandler) GetTask(c *gin.Context) {
 		return
 	}
 
+	// The DB status stays "queued" until the final step marks it "done"/"failed".
+	// For API consumers (including the web UI), treat tasks with recorded steps as running.
+	effectiveStatus := task.Status
+	if task.Status == models.TaskStatusQueued && len(steps) > 0 {
+		effectiveStatus = models.TaskStatusRunning
+	}
+
 	// Convert steps to response format
 	stepResponses := make([]map[string]interface{}, len(steps))
 	for i, step := range steps {
@@ -140,7 +148,7 @@ func (h *TaskHandler) GetTask(c *gin.Context) {
 
 	h.respondSuccess(c, map[string]interface{}{
 		"task_id":        task.ID.String(),
-		"status":         string(task.Status),
+		"status":         string(effectiveStatus),
 		"progress":       task.Progress,
 		"source_language": task.SourceLanguage,
 		"target_language": task.TargetLanguage,

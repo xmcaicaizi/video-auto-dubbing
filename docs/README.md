@@ -15,6 +15,7 @@
 - [API 合同](api-contracts.md)
 - [队列消息格式](queue-messages.md)
 - [数据模型](data-model.md)
+- [Pipeline 配置与 JSON 结构规范](pipeline-spec.md)
 - [编码规范](coding-standards.md)
 - [代码评审指南](code-review.md)
 - [提交信息规范](commit-message.md)

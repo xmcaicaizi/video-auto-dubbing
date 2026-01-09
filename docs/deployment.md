@@ -74,6 +74,7 @@ ASR_BACKEND=moonshine
 GLM_API_KEY=your_glm_api_key
 GLM_API_URL=https://open.bigmodel.cn/api/paas/v4/chat/completions
 GLM_MODEL=glm-4.5
+GLM_RPS=5
 
 # MinIO 鍏綉璁块棶鍦板潃锛堝彲閫夛紝濡傛灉 ASR 鏈嶅姟涓嶅湪鍚屼竴缃戠粶锛?# 渚嬪锛歮inio.example.com:9000 鎴栧弽鍚戜唬鐞嗗湴鍧€
 MINIO_PUBLIC_ENDPOINT=

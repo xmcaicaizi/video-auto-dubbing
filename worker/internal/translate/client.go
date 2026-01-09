@@ -19,11 +19,12 @@ import (
 
 // Client handles translation API calls to GLM.
 type Client struct {
-	apiKey string
-	apiURL string
-	model  string
-	client *http.Client
-	logger *zap.Logger
+	apiKey  string
+	apiURL  string
+	model   string
+	client  *http.Client
+	logger  *zap.Logger
+	limiter *rateLimiter
 }
 
 // NewClient creates a new translation client.
@@ -35,7 +36,8 @@ func NewClient(cfg config.GLMConfig, logger *zap.Logger) *Client {
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		logger: logger,
+		logger:  logger,
+		limiter: newRateLimiter(cfg.RPS),
 	}
 }
 
@@ -54,11 +56,23 @@ func (c *Client) Translate(ctx context.Context, texts []string, sourceLang, targ
 	if len(texts) == 0 {
 		return []string{}, nil
 	}
+	if c.limiter != nil {
+		if err := c.limiter.Wait(ctx); err != nil {
+			return nil, fmt.Errorf("translation throttled: %w", err)
+		}
+	}
 
 	// Build prompt that forces deterministic JSON array output in the same order.
-	// We keep the prompt minimal to reduce token usage and failure rate.
+	// Include translation rules to keep output consistent and usable for TTS.
 	inputJSON, _ := json.Marshal(texts)
-	systemPrompt := "你是一个翻译引擎。只输出 JSON 数组（string[]），不要输出任何解释或额外字符。"
+	systemPrompt := strings.Join([]string{
+		"你是一个翻译引擎。",
+		"只输出 JSON 数组（string[]），不要输出任何解释或额外字符。",
+		"保持条目数量与顺序一致，不新增或删除。",
+		"保留关键实体（人名、地名、品牌、专有名词）。",
+		"数字、日期、货币与单位保持数值含义准确。",
+		"标点与格式尽量保留，不添加语气词或无关补充。",
+	}, "")
 	userPrompt := fmt.Sprintf(
 		"把下面 JSON 数组中的每个元素从 %s 翻译成 %s，保持顺序与数量一致，只输出 JSON 数组：\n%s",
 		sourceLang, targetLang, string(inputJSON),

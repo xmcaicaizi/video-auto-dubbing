@@ -2,6 +2,8 @@
 
 > 更新日期：2026-01-03｜适用版本：main 分支
 
+本文档采用 UTF-8 编码保存，以避免中文显示乱码。
+
 本指南是视频本地化自动配音系统的唯一权威快速开始文档，包含从环境准备到常见问题的完整步骤。建议新旧使用者均以此为准。若需更多上下文，请参阅 `docs/README.md` 提供的文档索引。
 
 ## 1. 前置要求
@@ -24,6 +26,7 @@ cd vedio
 - `GLM_API_KEY`: 智谱 GLM 翻译 API Key
 - `GLM_API_URL`: GLM API 地址（默认 `https://open.bigmodel.cn/api/paas/v4/chat/completions`）
 - `GLM_MODEL`: GLM 模型名（默认 `glm-4.5`）
+- `GLM_RPS`: GLM 每秒请求数上限（默认 5）
 - `MODELSCOPE_TOKEN`: ModelScope API Token
 - `ASR_SERVICE_URL`: Moonshine ASR 服务地址（默认 `http://localhost:8002`）
 - `ASR_MODEL_ID`: Moonshine 模型 ID（默认 `moonshine-base`）

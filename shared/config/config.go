@@ -61,6 +61,7 @@ type GLMConfig struct {
 	APIKey string
 	APIURL string
 	Model  string
+	RPS    float64
 }
 
 // Option customizes the Loader behaviour.
@@ -94,6 +95,7 @@ func NewLoader(opts ...Option) *loader {
 		"ASR_SERVICE_URL":       "",
 		"GLM_API_URL":           "https://open.bigmodel.cn/api/paas/v4/chat/completions",
 		"GLM_MODEL":             "glm-4.5",
+		"GLM_RPS":               5.0,
 	}
 
 	l := &loader{
@@ -184,6 +186,7 @@ func (l *loader) Load() (*BaseConfig, error) {
 				APIKey: l.v.GetString("GLM_API_KEY"),
 				APIURL: l.v.GetString("GLM_API_URL"),
 				Model:  l.v.GetString("GLM_MODEL"),
+				RPS:    l.v.GetFloat64("GLM_RPS"),
 			},
 		},
 	}

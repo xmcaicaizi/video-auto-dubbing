@@ -80,6 +80,7 @@ temp/
 test_vedio/
 _vendor/
 artifacts/
+index-tts-windows
 
 # uv
 uv.lock.bak

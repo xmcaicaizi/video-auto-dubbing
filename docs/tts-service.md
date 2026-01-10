@@ -35,6 +35,172 @@ tts_service/
 - **开发环境**: `http://localhost:8000`
 - **生产环境**: `http://tts_service:8000`
 
+
+### ?? Gradio Live (IndexTTS2 ???)
+
+> ??: ?? Gradio Live ?????? IndexTTS2 ???????API ??????????? Base URL ?????????
+
+**Base URL (??)**: `https://aa178b11c55dad33a2.gradio.live/`
+
+**Python client ??**:
+```bash
+pip install gradio_client
+```
+
+#### 1. `POST /on_method_select`
+**??**: ?? "??????"
+
+```python
+from gradio_client import Client
+
+client = Client("https://aa178b11c55dad33a2.gradio.live/")
+result = client.predict(
+    emo_control_method="?????????",
+    api_name="/on_method_select",
+)
+print(result)
+```
+
+**??**:
+- `emo_control_method`: Literal['?????????', '????????', '????????']??? "?????????"
+
+#### 2. `POST /on_input_text_change`
+**??**: ?????????????
+
+```python
+from gradio_client import Client
+
+client = Client("https://aa178b11c55dad33a2.gradio.live/")
+result = client.predict(
+    text="Hello!!",
+    max_text_tokens_per_segment=120,
+    api_name="/on_input_text_change",
+)
+print(result)
+```
+
+**??**:
+- `text`: str (??)
+- `max_text_tokens_per_segment`: float (?? 120)
+
+**??**:
+- `Dict(headers: List[str], data: List[List[Any]], metadata: Dict(str, List[Any] | None) | None)`
+
+#### 3. `POST /on_experimental_change`
+**??**: ????????
+
+```python
+from gradio_client import Client
+
+client = Client("https://aa178b11c55dad33a2.gradio.live/")
+result = client.predict(
+    is_exp=False,
+    api_name="/on_experimental_change",
+)
+print(result)
+```
+
+**??**:
+- `is_exp`: bool (?? False)
+
+**??**:
+- tuple[0]: Literal['?????????', '????????', '????????']
+- tuple[1]: int
+
+#### 4. `POST /on_input_text_change_1`
+**??**: ?????????
+
+```python
+from gradio_client import Client
+
+client = Client("https://aa178b11c55dad33a2.gradio.live/")
+result = client.predict(
+    text="Hello!!",
+    max_text_tokens_per_segment=120,
+    api_name="/on_input_text_change_1",
+)
+print(result)
+```
+
+**??**:
+- `text`: str (??)
+- `max_text_tokens_per_segment`: float (?? 120)
+
+**??**:
+- `Dict(headers: List[str], data: List[List[Any]], metadata: Dict(str, List[Any] | None) | None)`
+
+#### 5. `POST /update_prompt_audio`
+**??**: ??????
+
+```python
+from gradio_client import Client
+
+client = Client("https://aa178b11c55dad33a2.gradio.live/")
+result = client.predict(
+    api_name="/update_prompt_audio",
+)
+print(result)
+```
+
+#### 6. `POST /gen_single`
+**??**: ??????
+
+```python
+from gradio_client import Client, handle_file
+
+client = Client("https://aa178b11c55dad33a2.gradio.live/")
+result = client.predict(
+    emo_control_method="?????????",
+    prompt=handle_file("https://github.com/gradio-app/gradio/raw/main/test/test_files/audio_sample.wav"),
+    text="Hello!!",
+    emo_ref_path=handle_file("https://github.com/gradio-app/gradio/raw/main/test/test_files/audio_sample.wav"),
+    emo_weight=0.8,
+    vec1=0,
+    vec2=0,
+    vec3=0,
+    vec4=0,
+    vec5=0,
+    vec6=0,
+    vec7=0,
+    vec8=0,
+    emo_text="",
+    emo_random=False,
+    max_text_tokens_per_segment=120,
+    param_16=True,
+    param_17=0.8,
+    param_18=30,
+    param_19=0.8,
+    param_20=0,
+    param_21=3,
+    param_22=10,
+    param_23=1500,
+    api_name="/gen_single",
+)
+print(result)
+```
+
+**?? (24 ?)**:
+- `emo_control_method`: Literal['?????????', '????????', '????????']
+- `prompt`: filepath (??????)
+- `text`: str (??)
+- `emo_ref_path`: filepath (????????)
+- `emo_weight`: float (?? 0.8)
+- `vec1`..`vec8`: float (???????? 0)
+- `emo_text`: str (?? "")
+- `emo_random`: bool (?? False)
+- `max_text_tokens_per_segment`: float (?? 120)
+- `param_16`: bool (do_sample, ?? True)
+- `param_17`: float (top_p, ?? 0.8)
+- `param_18`: float (top_k, ?? 30)
+- `param_19`: float (temperature, ?? 0.8)
+- `param_20`: float (length_penalty, ?? 0)
+- `param_21`: float (num_beams, ?? 3)
+- `param_22`: float (repetition_penalty, ?? 10)
+- `param_23`: float (max_mel_tokens, ?? 1500)
+
+**??**:
+- `filepath` (??????)
+
 ### 1. 健康检查
 
 **接口**: `GET /health`

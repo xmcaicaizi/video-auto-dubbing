@@ -13,6 +13,18 @@ if ! command -v docker >/dev/null 2>&1; then
     exit 1
 fi
 
+# Compose command compatibility:
+# - Prefer Docker Compose v2 plugin: `docker compose ...`
+# - Fallback to legacy v1 binary: `docker-compose ...`
+if docker compose version >/dev/null 2>&1; then
+    COMPOSE=(docker compose)
+elif command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE=(docker-compose)
+else
+    echo "错误: 未找到 Docker Compose（尝试安装 docker compose 插件或 docker-compose）。"
+    exit 1
+fi
+
 if [ ! -f "$ENV_FILE" ] && [ -f "$ENV_EXAMPLE" ]; then
     cp "$ENV_EXAMPLE" "$ENV_FILE"
     echo "已复制 env.example -> .env"
@@ -27,7 +39,7 @@ if [ -z "$GLM_KEY" ] || [ "$GLM_KEY" = "your_glm_api_key" ]; then
 fi
 
 echo "检查 IndexTTS2 模型权重..."
-docker compose run --rm tts_service python - <<'PY'
+"${COMPOSE[@]}" run --rm tts_service python - <<'PY'
 from pathlib import Path
 import os
 from huggingface_hub import snapshot_download
@@ -47,7 +59,7 @@ else:
 PY
 
 echo "检查 Moonshine ASR 模型..."
-docker compose run --rm asr_service python - <<'PY'
+"${COMPOSE[@]}" run --rm asr_service python - <<'PY'
 import os
 
 import moonshine_onnx
@@ -60,5 +72,5 @@ print(f"Moonshine ASR 模型已就绪: {model_id}")
 PY
 
 echo "启动服务..."
-docker compose up -d --build
-docker compose ps
+"${COMPOSE[@]}" up -d --build
+"${COMPOSE[@]}" ps

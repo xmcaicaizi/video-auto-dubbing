@@ -80,11 +80,11 @@
 
 完整、去重的步骤请阅读 [`docs/startup-guide.md`](docs/startup-guide.md)（唯一权威的快速启动指南）。概要流程如下：
 
-1. 安装 Docker Engine 20.10+ 与 Docker Compose 2.0+，预留 8GB 内存 / 50GB 磁盘。
+1. 安装 Docker Engine 20.10+ 与 Docker Compose（推荐 2.0+；如仅有 `docker-compose` v1 也可用），预留 8GB 内存 / 50GB 磁盘。
 2. 克隆仓库并进入目录：`git clone <repository-url> && cd vedio`。
 3. （可选）根据 `env.example` 配置 API Key、模型与存储等环境变量。
-4. 下载 IndexTTS-2 模型权重（见 `docs/startup-guide.md`）。
-5. 启动并验证：`docker compose up -d && docker compose ps`，前端访问 `http://localhost`，API 健康检查 `http://localhost:8080/health`。
+4. 下载 IndexTTS-2 与 Moonshine ASR 模型（见 `docs/startup-guide.md`）。
+5. 启动并验证：`docker compose up -d && docker compose ps`（如为 v1 请替换为 `docker-compose`），前端访问 `http://localhost`，API 健康检查 `http://localhost:8080/health`。
 
 ### 一键 Docker 部署（推荐）
 
@@ -92,7 +92,7 @@
 bash scripts/bootstrap.sh
 ```
 
-脚本会自动复制 `env.example` 到 `.env`（如不存在）、下载 IndexTTS-2 权重，并执行 `docker compose up -d --build`。
+脚本会自动复制 `env.example` 到 `.env`（如不存在）、下载 IndexTTS-2 与 Moonshine ASR 模型，并自动选择 `docker compose`（v2）或 `docker-compose`（v1）执行启动。
 
 ### 真实 E2E 测试（10 秒样例）
 

@@ -8,7 +8,7 @@
 
 ## 1. 前置要求
 
-- **Docker Engine** 20.10+、**Docker Compose** 2.0+
+- **Docker Engine** 20.10+、**Docker Compose**（推荐 2.0+；如使用 `docker-compose` 1.x 也可）
 - 至少 **8GB 内存**、**50GB 磁盘** 可用空间
 - 终端可访问互联网（用于拉取镜像与依赖）
 
@@ -25,7 +25,7 @@ cd vedio
 bash scripts/bootstrap.sh
 ```
 
-脚本会自动复制 `env.example` 到 `.env`（如不存在）、下载 IndexTTS-2 与 Moonshine ASR 模型（首次部署建议），并执行 `docker compose up -d --build`。
+脚本会自动复制 `env.example` 到 `.env`（如不存在）、下载 IndexTTS-2 与 Moonshine ASR 模型（首次部署建议），并自动选择使用 `docker compose`（v2）或 `docker-compose`（v1）启动服务。
 如需真实翻译，请在 `.env` 中填写 `GLM_API_KEY` 后再执行。
 
 ## 3. 配置环境变量（可选，但推荐）

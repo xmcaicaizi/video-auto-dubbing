@@ -8,13 +8,15 @@
 
 - Linux x86_64（Ubuntu 20.04+ / Debian 11+ / CentOS 8+）
 - Docker Engine 20.10+
-- Docker Compose v2
+- Docker Compose（推荐 v2；如仅有 `docker-compose` v1 也可用）
 - 至少 8GB 可用内存（模型推理建议 16GB+）
 - 至少 50GB 可用磁盘（模型权重与数据单独预留）
 - 可选：NVIDIA GPU + 驱动 + NVIDIA Container Toolkit
 - 无 GPU 环境可运行但速度较慢，需移除 `docker-compose.yml` 中 `tts_service` 的 `runtime: nvidia` 与 `deploy.resources`
 
 ## 快速开始（Docker Compose）
+
+> 下文示例使用 `docker compose`（v2）。如果你的服务器只有 `docker-compose`（v1），请将命令中的 `docker compose` 替换为 `docker-compose`；或直接使用 `bash scripts/bootstrap.sh`（会自动兼容 v1/v2）。
 
 1. **克隆项目并进入目录**
 ```bash

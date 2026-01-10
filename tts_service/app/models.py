@@ -45,6 +45,13 @@ class SynthesisRequest(BaseModel):
     )
     output_format: str = Field(default="wav", pattern="^(wav|mp3)$", description="Output format")
     sample_rate: int = Field(default=22050, description="Sample rate")
+    # Optional per-request backend override (e.g. cloud Gradio deployments with changing URLs)
+    tts_backend: Optional[str] = Field(
+        default=None, description='Override backend: "index_tts2" | "index_tts2_gradio"'
+    )
+    indextts_gradio_url: Optional[str] = Field(
+        default=None, description="IndexTTS2 Gradio app base URL when using index_tts2_gradio"
+    )
 
 
 class BatchSynthesisRequest(BaseModel):

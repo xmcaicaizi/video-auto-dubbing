@@ -34,6 +34,9 @@ type Task struct {
 	GLMAPIKey       *string `json:"-" db:"glm_api_key"`
 	GLMAPIURL       *string `json:"-" db:"glm_api_url"`
 	GLMModel        *string `json:"-" db:"glm_model"`
+	// Per-task TTS configuration (not exposed via JSON)
+	TTSBackend        *string `json:"-" db:"tts_backend"`
+	IndexTTSGradioURL *string `json:"-" db:"indextts_gradio_url"`
 	OutputVideoKey *string   `json:"-" db:"output_video_key"`
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`

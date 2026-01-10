@@ -8,8 +8,10 @@ import (
 // Migrate runs database migrations.
 func Migrate(db *sql.DB) error {
 	migrations := []string{
+		createExtensions,
 		createTasksTable,
 		alterTasksTableAddExternalKeys,
+		alterTasksTableAddTTSConfig,
 		createTaskStepsTable,
 		createSegmentsTable,
 	}
@@ -22,6 +24,10 @@ func Migrate(db *sql.DB) error {
 
 	return nil
 }
+
+const createExtensions = `
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+`
 
 const createTasksTable = `
 CREATE TABLE IF NOT EXISTS tasks (
@@ -39,6 +45,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     glm_api_key TEXT,
     glm_api_url TEXT,
     glm_model TEXT,
+    -- Per-task TTS configuration (optional override)
+    tts_backend TEXT,
+    indextts_gradio_url TEXT,
     output_video_key VARCHAR(255),
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -57,6 +66,12 @@ ALTER TABLE tasks
     ADD COLUMN IF NOT EXISTS glm_api_key TEXT,
     ADD COLUMN IF NOT EXISTS glm_api_url TEXT,
     ADD COLUMN IF NOT EXISTS glm_model TEXT;
+`
+
+const alterTasksTableAddTTSConfig = `
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS tts_backend TEXT,
+    ADD COLUMN IF NOT EXISTS indextts_gradio_url TEXT;
 `
 
 const createTaskStepsTable = `

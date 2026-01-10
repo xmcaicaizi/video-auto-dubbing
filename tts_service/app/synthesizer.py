@@ -1,4 +1,4 @@
-"""TTS synthesizer using local IndexTTS2 inference."""
+"""TTS synthesizer supporting local IndexTTS2 and remote Gradio backends."""
 
 import io
 import logging
@@ -13,14 +13,14 @@ import numpy as np
 import soundfile as sf
 
 from app.config import settings
-from app.exceptions import ModelNotLoadedError, SynthesisError
+from app.exceptions import InvalidParameterError, ModelNotLoadedError, SynthesisError
 from app.models import ProsodyControl
 
 logger = logging.getLogger(__name__)
 
 
 class TTSSynthesizer:
-    """TTS synthesizer wrapper for local IndexTTS2 inference."""
+    """TTS synthesizer wrapper for local IndexTTS2 inference and optional Gradio backend."""
 
     def __init__(self):
         """Initialize the TTS synthesizer."""
@@ -31,6 +31,8 @@ class TTSSynthesizer:
         self._executor: Optional[ThreadPoolExecutor] = None
         self._prompt_cache: Dict[str, Path] = {}
         self._prompt_cache_lock = threading.Lock()
+        self._gradio_clients: Dict[str, tuple[object, threading.Lock]] = {}
+        self._gradio_clients_lock = threading.Lock()
         if settings.max_concurrent_requests > 0:
             self._executor = ThreadPoolExecutor(max_workers=settings.max_concurrent_requests)
 
@@ -44,9 +46,6 @@ class TTSSynthesizer:
             logger.info("Model already loaded")
             self._index_tts_loaded = self._index_tts is not None or self._index_tts_loaded
             return
-
-        if settings.tts_backend != "index_tts2":
-            raise ModelNotLoadedError(f"Unsupported TTS backend: {settings.tts_backend}")
 
         try:
             self._load_index_tts()
@@ -199,13 +198,121 @@ class TTSSynthesizer:
             f"IndexTTS2 prompt audio not found or unreachable: {prompt_audio}"
         )
 
+    def _normalize_backend(self, tts_backend: Optional[str]) -> str:
+        value = (tts_backend or settings.tts_backend or "").strip()
+        if value in ("", "index_tts2"):
+            return "index_tts2"
+        if value in ("index_tts2_gradio", "gradio"):
+            return "index_tts2_gradio"
+        raise InvalidParameterError(f"Unsupported TTS backend: {value}")
+
+    def _get_gradio_client(self, base_url: str) -> tuple[object, threading.Lock]:
+        normalized = base_url.strip().rstrip("/")
+        with self._gradio_clients_lock:
+            cached = self._gradio_clients.get(normalized)
+            if cached:
+                return cached
+            try:
+                from gradio_client import Client
+            except Exception as e:  # pragma: no cover - optional dependency
+                raise ModelNotLoadedError(f"gradio_client is not installed: {e}") from e
+            client = Client(normalized)
+            lock = threading.Lock()
+            self._gradio_clients[normalized] = (client, lock)
+            return client, lock
+
+    def _extract_gradio_filepath(self, output: object) -> Path:
+        if isinstance(output, str):
+            return Path(output)
+        if isinstance(output, dict):
+            for key in ("path", "name", "filepath"):
+                value = output.get(key)
+                if isinstance(value, str) and value:
+                    return Path(value)
+        if isinstance(output, (list, tuple)) and output:
+            return self._extract_gradio_filepath(output[0])
+        raise SynthesisError(f"Unexpected gradio output type: {type(output)}")
+
+    def _call_gradio_index_tts2(
+        self,
+        text: str,
+        prompt_audio: str,
+        gradio_url: str,
+    ) -> tuple[np.ndarray, int]:
+        try:
+            from gradio_client import handle_file
+        except Exception as e:  # pragma: no cover - optional dependency
+            raise ModelNotLoadedError(f"gradio_client is not installed: {e}") from e
+
+        client, lock = self._get_gradio_client(gradio_url)
+        prompt_path = self._prepare_prompt_audio(prompt_audio)
+
+        with lock:
+            result = client.predict(
+                emo_control_method="与音色参考音频相同",
+                prompt=handle_file(str(prompt_path)),
+                text=text,
+                emo_ref_path=handle_file(str(prompt_path)),
+                emo_weight=0.8,
+                vec1=0,
+                vec2=0,
+                vec3=0,
+                vec4=0,
+                vec5=0,
+                vec6=0,
+                vec7=0,
+                vec8=0,
+                emo_text="",
+                emo_random=False,
+                max_text_tokens_per_segment=120,
+                param_16=True,
+                param_17=0.8,
+                param_18=30,
+                param_19=0.8,
+                param_20=0,
+                param_21=3,
+                param_22=10,
+                param_23=1500,
+                api_name="/gen_single",
+            )
+
+        output_path = self._extract_gradio_filepath(result)
+        if not output_path.exists():
+            raise SynthesisError(f"Gradio did not return a file: {output_path}")
+
+        audio_data, sr = sf.read(output_path)
+        if not isinstance(audio_data, np.ndarray):
+            audio_data = np.array(audio_data, dtype=np.float32)
+        else:
+            audio_data = audio_data.astype(np.float32)
+        if audio_data.ndim > 1:
+            audio_data = np.mean(audio_data, axis=1)
+        return audio_data, int(sr)
+
     def _call_tts(
         self,
         text: str,
         prompt_audio_url: Optional[str],
+        tts_backend: Optional[str] = None,
+        indextts_gradio_url: Optional[str] = None,
     ) -> tuple[np.ndarray, int]:
+        backend = self._normalize_backend(tts_backend)
         prompt_audio = prompt_audio_url or settings.indextts_prompt_audio
-        return self._call_index_tts(text=text, prompt_audio=prompt_audio)
+
+        if backend == "index_tts2":
+            if not self._model_loaded:
+                self.load_model()
+            return self._call_index_tts(text=text, prompt_audio=prompt_audio)
+
+        gradio_url = (indextts_gradio_url or settings.indextts_gradio_url).strip()
+        if not gradio_url:
+            raise InvalidParameterError(
+                "indextts_gradio_url is required when tts_backend=index_tts2_gradio"
+            )
+        if not gradio_url.startswith(("http://", "https://")):
+            raise InvalidParameterError("indextts_gradio_url must start with http:// or https://")
+
+        return self._call_gradio_index_tts2(text=text, prompt_audio=prompt_audio, gradio_url=gradio_url)
 
     def _adjust_duration(self, audio: np.ndarray, target_duration_ms: int, sample_rate: int) -> np.ndarray:
         """Adjust audio duration to match target duration.
@@ -271,6 +378,8 @@ class TTSSynthesizer:
         prosody_control: Optional[ProsodyControl] = None,
         sample_rate: int = 22050,
         prompt_audio_url: Optional[str] = None,
+        tts_backend: Optional[str] = None,
+        indextts_gradio_url: Optional[str] = None,
     ) -> bytes:
         """Synthesize audio from text with time constraints.
 
@@ -289,9 +398,7 @@ class TTSSynthesizer:
             ModelNotLoadedError: If model is not loaded.
             SynthesisError: If synthesis fails.
         """
-        if not self._model_loaded:
-            raise ModelNotLoadedError("TTS model is not loaded")
-
+        resolved_backend = self._normalize_backend(tts_backend)
         logger.info(
             "Synthesizing audio",
             extra={
@@ -300,6 +407,7 @@ class TTSSynthesizer:
                 "speaker_id": speaker_id,
                 "language": language,
                 "strict_duration": settings.strict_duration,
+                "backend": resolved_backend,
             },
         )
 
@@ -307,6 +415,8 @@ class TTSSynthesizer:
             audio_data, produced_sr = self._call_tts(
                 text=text,
                 prompt_audio_url=prompt_audio_url,
+                tts_backend=resolved_backend,
+                indextts_gradio_url=indextts_gradio_url,
             )
 
             # Resample if needed
@@ -361,6 +471,8 @@ class TTSSynthesizer:
         prosody_control: Optional[ProsodyControl] = None,
         sample_rate: int = 22050,
         prompt_audio_url: Optional[str] = None,
+        tts_backend: Optional[str] = None,
+        indextts_gradio_url: Optional[str] = None,
     ) -> bytes:
         """Synthesize audio with segment-level time constraints.
 
@@ -378,15 +490,14 @@ class TTSSynthesizer:
             ModelNotLoadedError: If model is not loaded.
             SynthesisError: If synthesis fails.
         """
-        if not self._model_loaded:
-            raise ModelNotLoadedError("TTS model is not loaded")
-
+        resolved_backend = self._normalize_backend(tts_backend)
         logger.info(
             "Synthesizing audio with segments",
             extra={
                 "segment_count": len(segments),
                 "speaker_id": speaker_id,
                 "language": language,
+                "backend": resolved_backend,
             },
         )
 
@@ -407,6 +518,8 @@ class TTSSynthesizer:
                         prosody_control=prosody_control,
                         sample_rate=sample_rate,
                         prompt_audio_url=prompt_audio_url,
+                        tts_backend=resolved_backend,
+                        indextts_gradio_url=indextts_gradio_url,
                     )
                     futures[future] = idx
 
@@ -432,6 +545,8 @@ class TTSSynthesizer:
                         prosody_control=prosody_control,
                         sample_rate=sample_rate,
                         prompt_audio_url=prompt_audio_url,
+                        tts_backend=resolved_backend,
+                        indextts_gradio_url=indextts_gradio_url,
                     )
                     segment_audios.append(audio)
 

@@ -32,6 +32,8 @@ type SynthesisRequest struct {
 	ProsodyControl   map[string]interface{} `json:"prosody_control,omitempty"`
 	OutputFormat     string                 `json:"output_format"`
 	SampleRate       int                    `json:"sample_rate"`
+	TTSBackend        string `json:"tts_backend,omitempty"`
+	IndexTTSGradioURL string `json:"indextts_gradio_url,omitempty"`
 }
 
 // SynthesisResponse represents a TTS synthesis response.

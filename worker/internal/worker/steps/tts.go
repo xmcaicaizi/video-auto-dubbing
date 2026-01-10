@@ -25,6 +25,11 @@ type TTSProcessor struct {
 	deps Deps
 }
 
+type taskTTSConfig struct {
+	backend   string
+	gradioURL string
+}
+
 func NewTTSProcessor(deps Deps) *TTSProcessor {
 	return &TTSProcessor{deps: deps}
 }
@@ -66,6 +71,11 @@ func (p *TTSProcessor) Process(ctx context.Context, taskID uuid.UUID, msg models
 		return err
 	}
 
+	ttsCfg, err := p.loadTaskTTSConfig(ctx, taskID)
+	if err != nil {
+		return err
+	}
+
 	pendingSegments, err := p.loadPendingSegments(ctx, taskID, payload)
 	if err != nil {
 		return err
@@ -99,7 +109,7 @@ func (p *TTSProcessor) Process(ctx context.Context, taskID uuid.UUID, msg models
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			if err := p.processSegmentWithRetry(ctx, taskID, segment, targetLang, promptInfo, maxRetries, retryDelay); err != nil {
+			if err := p.processSegmentWithRetry(ctx, taskID, segment, targetLang, promptInfo, ttsCfg, maxRetries, retryDelay); err != nil {
 				p.deps.Logger.Error("TTS segment failed after retries", zap.String("task_id", taskID.String()), zap.Int("segment_idx", segment.idx), zap.Error(err))
 				_ = p.publishCompensation(ctx, taskID, segment.idx, err)
 				mu.Lock()
@@ -151,6 +161,18 @@ func (p *TTSProcessor) loadTaskLanguage(ctx context.Context, taskID uuid.UUID) (
 		return "", fmt.Errorf("failed to get task target language: %w", err)
 	}
 	return targetLang, nil
+}
+
+func (p *TTSProcessor) loadTaskTTSConfig(ctx context.Context, taskID uuid.UUID) (taskTTSConfig, error) {
+	var backend, gradioURL string
+	query := `SELECT COALESCE(tts_backend, ''), COALESCE(indextts_gradio_url, '') FROM tasks WHERE id = $1`
+	if err := p.deps.DB.QueryRowContext(ctx, query, taskID).Scan(&backend, &gradioURL); err != nil {
+		return taskTTSConfig{}, fmt.Errorf("failed to get task tts config: %w", err)
+	}
+	return taskTTSConfig{
+		backend:   strings.TrimSpace(backend),
+		gradioURL: strings.TrimSpace(gradioURL),
+	}, nil
 }
 
 type ttsSegment struct {
@@ -268,7 +290,7 @@ func (p *TTSProcessor) resolveRetryDelay(payload models.TTSPayload) time.Duratio
 	return 2 * time.Second
 }
 
-func (p *TTSProcessor) processSegmentWithRetry(ctx context.Context, taskID uuid.UUID, segment ttsSegment, targetLang string, promptInfo promptInfo, maxRetries int, retryDelay time.Duration) error {
+func (p *TTSProcessor) processSegmentWithRetry(ctx context.Context, taskID uuid.UUID, segment ttsSegment, targetLang string, promptInfo promptInfo, ttsCfg taskTTSConfig, maxRetries int, retryDelay time.Duration) error {
 	existingKey, err := p.getExistingSegmentAudio(ctx, taskID, segment.idx)
 	if err == nil && existingKey != "" {
 		p.deps.Logger.Info("Segment already synthesized, skipping", zap.String("task_id", taskID.String()), zap.Int("segment_idx", segment.idx), zap.String("tts_audio_key", existingKey))
@@ -280,7 +302,7 @@ func (p *TTSProcessor) processSegmentWithRetry(ctx context.Context, taskID uuid.
 		if attempt > 0 {
 			time.Sleep(retryDelay)
 		}
-		if err := p.processSingleSegment(ctx, taskID, segment, targetLang, promptInfo); err != nil {
+		if err := p.processSingleSegment(ctx, taskID, segment, targetLang, promptInfo, ttsCfg); err != nil {
 			lastErr = err
 			p.deps.Logger.Warn("Segment TTS attempt failed", zap.String("task_id", taskID.String()), zap.Int("segment_idx", segment.idx), zap.Int("attempt", attempt+1), zap.Error(err))
 			continue
@@ -290,7 +312,7 @@ func (p *TTSProcessor) processSegmentWithRetry(ctx context.Context, taskID uuid.
 	return lastErr
 }
 
-func (p *TTSProcessor) processSingleSegment(ctx context.Context, taskID uuid.UUID, segment ttsSegment, targetLang string, promptInfo promptInfo) error {
+func (p *TTSProcessor) processSingleSegment(ctx context.Context, taskID uuid.UUID, segment ttsSegment, targetLang string, promptInfo promptInfo, ttsCfg taskTTSConfig) error {
 	if strings.TrimSpace(segment.text) == "" {
 		return fmt.Errorf("segment %d has empty text", segment.idx)
 	}
@@ -304,6 +326,8 @@ func (p *TTSProcessor) processSingleSegment(ctx context.Context, taskID uuid.UUI
 		ProsodyControl:   segment.prosody,
 		OutputFormat:     "wav",
 		SampleRate:       22050,
+		TTSBackend:        ttsCfg.backend,
+		IndexTTSGradioURL: ttsCfg.gradioURL,
 	}
 
 	audioReader, err := p.deps.TTSClient.Synthesize(ctx, ttsReq)
@@ -333,6 +357,8 @@ func (p *TTSProcessor) processSingleSegment(ctx context.Context, taskID uuid.UUI
 		"prompt_url":         promptInfo.url,
 		"prompt_segment_idx": promptInfo.segmentIdx,
 		"prompt_duration_ms": promptInfo.durationMs,
+		"tts_backend":        ttsCfg.backend,
+		"indextts_gradio_url": ttsCfg.gradioURL,
 	}
 	ttsParamsJSON, _ := json.Marshal(ttsParams)
 	ttsParamsStr := string(ttsParamsJSON)

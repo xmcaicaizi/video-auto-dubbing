@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     tts_workers: int = 1
 
     # TTS backend configuration
-    tts_backend: str = "index_tts2"  # Backend: "index_tts2"
+    tts_backend: str = "index_tts2"  # Backend: "index_tts2" | "index_tts2_gradio"
     strict_duration: bool = False  # Whether to strictly enforce target_duration_ms
 
     # IndexTTS2 local inference configuration
@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     indextts_use_fp16: bool = True
     indextts_use_torch_compile: bool = False
     indextts_use_cuda_kernel: bool = False
+    # IndexTTS2 Gradio backend configuration (optional)
+    indextts_gradio_url: str = ""
 
     # Audio settings
     default_sample_rate: int = 22050

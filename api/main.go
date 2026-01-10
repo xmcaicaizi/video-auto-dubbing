@@ -44,6 +44,9 @@ func main() {
 	defer db.Close()
 
 	logger.Info("Database connected successfully")
+	if err := database.Migrate(db.DB); err != nil {
+		logger.Fatal("Failed to migrate database schema", zap.Error(err))
+	}
 
 	// Initialize MinIO client
 	minioClient, err := minio.New(cfg.MinIO)

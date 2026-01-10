@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"vedio/api/internal/models"
 	"vedio/api/internal/service"
@@ -38,6 +39,9 @@ type CreateTaskRequest struct {
 	GLMAPIKey       string `form:"glm_api_key" binding:"omitempty"`
 	GLMAPIURL       string `form:"glm_api_url" binding:"omitempty"`
 	GLMModel        string `form:"glm_model" binding:"omitempty"`
+	// Per-task TTS configuration (optional override)
+	TTSBackend        string `form:"tts_backend" binding:"omitempty"`         // "index_tts2" | "index_tts2_gradio"
+	IndexTTSGradioURL string `form:"indextts_gradio_url" binding:"omitempty"` // e.g. https://xxxx.gradio.live/
 }
 
 // CreateTaskResponse represents the response for creating a task.
@@ -59,6 +63,25 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 	var req CreateTaskRequest
 	if err := c.ShouldBind(&req); err != nil {
 		h.respondError(c, http.StatusBadRequest, 1001, "参数错误", err.Error())
+		return
+	}
+
+	req.TTSBackend = strings.TrimSpace(req.TTSBackend)
+	req.IndexTTSGradioURL = strings.TrimSpace(req.IndexTTSGradioURL)
+	switch req.TTSBackend {
+	case "", "index_tts2":
+		// Local IndexTTS2 (default).
+	case "index_tts2_gradio":
+		if req.IndexTTSGradioURL == "" {
+			h.respondError(c, http.StatusBadRequest, 1001, "鍙傛暟閿欒", "indextts_gradio_url is required when tts_backend=index_tts2_gradio")
+			return
+		}
+		if !strings.HasPrefix(req.IndexTTSGradioURL, "http://") && !strings.HasPrefix(req.IndexTTSGradioURL, "https://") {
+			h.respondError(c, http.StatusBadRequest, 1001, "鍙傛暟閿欒", "indextts_gradio_url must start with http:// or https://")
+			return
+		}
+	default:
+		h.respondError(c, http.StatusBadRequest, 1001, "鍙傛暟閿欒", "unsupported tts_backend")
 		return
 	}
 
@@ -86,6 +109,8 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 		GLMAPIKey:       req.GLMAPIKey,
 		GLMAPIURL:       req.GLMAPIURL,
 		GLMModel:        req.GLMModel,
+		TTSBackend:      req.TTSBackend,
+		GradioBaseURL:   req.IndexTTSGradioURL,
 	})
 	if err != nil {
 		h.logger.Error("Failed to create task", zap.Error(err))

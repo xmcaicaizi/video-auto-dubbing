@@ -53,9 +53,10 @@ async def startup_event():
     temp_dir = Path(settings.audio_temp_dir)
     temp_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load TTS model
+    # Load TTS model (local backend only). Remote Gradio backend requires no local weights.
     try:
-        synthesizer.load_model()
+        if settings.tts_backend == "index_tts2":
+            synthesizer.load_model()
         logger.info("TTS service started successfully")
     except Exception as e:
         logger.error(f"Failed to start TTS service: {e}", exc_info=True)
@@ -205,6 +206,8 @@ async def synthesize(
                 prosody_control=request.prosody_control,
                 sample_rate=request.sample_rate,
                 prompt_audio_url=request.prompt_audio_url,
+                tts_backend=request.tts_backend,
+                indextts_gradio_url=request.indextts_gradio_url,
             )
         else:
             # Whole text synthesis
@@ -217,6 +220,8 @@ async def synthesize(
                 prosody_control=request.prosody_control,
                 sample_rate=request.sample_rate,
                 prompt_audio_url=request.prompt_audio_url,
+                tts_backend=request.tts_backend,
+                indextts_gradio_url=request.indextts_gradio_url,
             )
 
         # Calculate actual duration
@@ -293,6 +298,8 @@ async def synthesize_batch(request: BatchSynthesisRequest):
                     prosody_control=req.prosody_control,
                     sample_rate=req.sample_rate,
                     prompt_audio_url=req.prompt_audio_url,
+                    tts_backend=req.tts_backend,
+                    indextts_gradio_url=req.indextts_gradio_url,
                 )
             else:
                 audio_bytes = await asyncio.to_thread(
@@ -304,6 +311,8 @@ async def synthesize_batch(request: BatchSynthesisRequest):
                     prosody_control=req.prosody_control,
                     sample_rate=req.sample_rate,
                     prompt_audio_url=req.prompt_audio_url,
+                    tts_backend=req.tts_backend,
+                    indextts_gradio_url=req.indextts_gradio_url,
                 )
 
             # Save segment audio

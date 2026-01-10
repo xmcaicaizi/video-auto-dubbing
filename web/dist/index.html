@@ -409,6 +409,92 @@
             localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(next || {}));
         }
 
+        function normalizeGradioURL(url) {
+            const s = (url || '').trim();
+            if (!s) return '';
+            return s.endsWith('/') ? s.slice(0, -1) : s;
+        }
+
+        function syncTTSSettingsUI() {
+            const backendEl = document.getElementById('tts_backend');
+            const urlEl = document.getElementById('indextts_gradio_url');
+            if (!backendEl || !urlEl) return;
+            const isRemote = backendEl.value === 'index_tts2_gradio';
+            urlEl.disabled = !isRemote;
+            urlEl.style.opacity = isRemote ? '1' : '0.6';
+        }
+
+        // Ensure per-task settings are always submitted when creating tasks.
+        (function patchFetchForTaskCreate() {
+            const originalFetch = window.fetch.bind(window);
+            window.fetch = (input, init) => {
+                try {
+                    const url = typeof input === 'string' ? input : (input && input.url) || '';
+                    const method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+                    if (method === 'POST' && url === `${API_BASE}/tasks` && init && init.body instanceof FormData) {
+                        const s = getSettings();
+                        if (s.tts_backend && !init.body.has('tts_backend')) init.body.append('tts_backend', s.tts_backend);
+                        if (s.indextts_gradio_url && !init.body.has('indextts_gradio_url')) init.body.append('indextts_gradio_url', s.indextts_gradio_url);
+                    }
+                } catch (_) {
+                }
+                return originalFetch(input, init);
+            };
+            const next = getSettings();
+            if (next.tts_backend === 'index_tts2_gradio') {
+                if (!next.indextts_gradio_url) {
+                    alert('IndexTTS2 Gradio URL is required when using Remote Gradio backend');
+                    return;
+                }
+                if (!/^https?:\\/\\//.test(next.indextts_gradio_url)) {
+                    alert('IndexTTS2 Gradio URL must start with http:// or https://');
+                    return;
+                }
+            }
+        })();
+
+        // Inject TTS backend controls into the settings panel (keeps the template string untouched).
+        window.addEventListener('load', () => {
+            const panel = document.getElementById('settingsPanel');
+            if (!panel) return;
+            if (document.getElementById('tts_backend') || document.getElementById('indextts_gradio_url')) return;
+
+            const actions = panel.querySelector('.settings-actions');
+            if (!actions || !actions.parentNode) return;
+
+            const groupBackend = document.createElement('div');
+            groupBackend.className = 'form-group';
+            groupBackend.innerHTML = `
+                <label>TTS Backend</label>
+                <select id="tts_backend" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
+                    <option value="index_tts2">Local (IndexTTS2)</option>
+                    <option value="index_tts2_gradio">Remote (Gradio WebUI)</option>
+                </select>
+            `;
+
+            const groupURL = document.createElement('div');
+            groupURL.className = 'form-group';
+            groupURL.innerHTML = `
+                <label>IndexTTS2 Gradio URL</label>
+                <input id="indextts_gradio_url" placeholder="https://xxxx.gradio.live/" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
+            `;
+
+            const hint = document.createElement('div');
+            hint.style.fontSize = '12px';
+            hint.style.color = '#666';
+            hint.style.marginTop = '-10px';
+            hint.style.marginBottom = '10px';
+            hint.textContent = 'Required when using Remote (Gradio) backend';
+
+            actions.parentNode.insertBefore(groupBackend, actions);
+            actions.parentNode.insertBefore(groupURL, actions);
+            actions.parentNode.insertBefore(hint, actions);
+
+            const backendEl = document.getElementById('tts_backend');
+            if (backendEl) backendEl.addEventListener('change', syncTTSSettingsUI);
+            syncTTSSettingsUI();
+        });
+
         function openSettings() {
             const s = getSettings();
             document.getElementById('asr_appid').value = s.asr_appid || '';
@@ -419,6 +505,11 @@
             document.getElementById('glm_model').value = s.glm_model || 'glm-4.5';
             document.getElementById('glm_api_url').value = s.glm_api_url || 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
             document.getElementById('modelscope_token').value = s.modelscope_token || '';
+            const ttsBackendEl = document.getElementById('tts_backend');
+            const gradioUrlEl = document.getElementById('indextts_gradio_url');
+            if (ttsBackendEl) ttsBackendEl.value = s.tts_backend || 'index_tts2';
+            if (gradioUrlEl) gradioUrlEl.value = s.indextts_gradio_url || '';
+            syncTTSSettingsUI();
             document.getElementById('settingsPanel').style.display = 'block';
         }
 
@@ -436,6 +527,8 @@
                 glm_model: (document.getElementById('glm_model').value || 'glm-4.5').trim(),
                 glm_api_url: (document.getElementById('glm_api_url').value || 'https://open.bigmodel.cn/api/paas/v4/chat/completions').trim(),
                 modelscope_token: (document.getElementById('modelscope_token').value || '').trim(),
+                tts_backend: (document.getElementById('tts_backend')?.value || 'index_tts2').trim(),
+                indextts_gradio_url: normalizeGradioURL(document.getElementById('indextts_gradio_url')?.value),
             };
             setSettings(next);
             closeSettings();

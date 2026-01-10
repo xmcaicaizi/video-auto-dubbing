@@ -79,6 +79,7 @@ temp/
 *.mkv
 test_vedio/
 _vendor/
+index-tts-windows/
 
 # uv
 uv.lock.bak

@@ -135,8 +135,7 @@
   "data": {
     "task_id": "550e8400-e29b-41d4-a716-446655440000",
     "status": "done",
-    "output_video_url": "http://minio:9000/outputs/550e8400-e29b-41d4-a716-446655440000/final.mp4",
-    "subtitle_url": "http://minio:9000/subs/550e8400-e29b-41d4-a716-446655440000/subtitles.vtt",
+    "output_video_url": "http://minio.example.com:9000/videos/outputs/550e8400-e29b-41d4-a716-446655440000/final.mp4?X-Amz-Algorithm=...",
     "segments": [
       {
         "idx": 0,
@@ -144,19 +143,10 @@
         "end_ms": 1500,
         "src_text": "你好，世界",
         "mt_text": "Hello, world",
-        "tts_audio_url": "http://minio:9000/tts/550e8400-e29b-41d4-a716-446655440000/segment_0.wav"
-      },
-      {
-        "idx": 1,
-        "start_ms": 1500,
-        "end_ms": 3000,
-        "src_text": "这是一个测试",
-        "mt_text": "This is a test",
-        "tts_audio_url": "http://minio:9000/tts/550e8400-e29b-41d4-a716-446655440000/segment_1.wav"
+        "tts_audio_url": "http://minio.example.com:9000/videos/tts/550e8400-e29b-41d4-a716-446655440000/segment_0.wav?X-Amz-Algorithm=..."
       }
     ],
-    "created_at": "2024-01-01T12:00:00Z",
-    "completed_at": "2024-01-01T12:10:00Z"
+    "created_at": "2024-01-01T12:00:00Z"
   }
 }
 ```
@@ -189,7 +179,7 @@
   "code": 0,
   "message": "success",
   "data": {
-    "download_url": "http://minio:9000/outputs/550e8400-e29b-41d4-a716-446655440000/final.mp4?X-Amz-Algorithm=...",
+    "download_url": "http://minio.example.com:9000/videos/outputs/550e8400-e29b-41d4-a716-446655440000/final.mp4?X-Amz-Algorithm=...",
     "expires_in": 3600
   }
 }

@@ -25,7 +25,7 @@ cd vedio
 bash scripts/bootstrap.sh
 ```
 
-脚本会自动复制 `env.example` 到 `.env`（如不存在）、下载 IndexTTS-2 权重，并执行 `docker compose up -d --build`。
+脚本会自动复制 `env.example` 到 `.env`（如不存在）、下载 IndexTTS-2 与 Moonshine ASR 模型（首次部署建议），并执行 `docker compose up -d --build`。
 如需真实翻译，请在 `.env` 中填写 `GLM_API_KEY` 后再执行。
 
 ## 3. 配置环境变量（可选，但推荐）
@@ -46,7 +46,7 @@ bash scripts/bootstrap.sh
 - `INDEXTTS_CFG_PATH`: IndexTTS2 配置文件（默认 `/app/models/IndexTTS-2/config.yaml`）
 - `HF_ENDPOINT`: HuggingFace 访问地址（可选，默认 `https://hf-mirror.com`）
 - `HF_HUB_CACHE`: HuggingFace 缓存目录（默认 `/app/models/IndexTTS-2/hf_cache`）
-- `MINIO_PUBLIC_ENDPOINT`: MinIO 外部可访问地址（ASR 服务不在同一网络时使用）
+- `MINIO_PUBLIC_ENDPOINT`: MinIO 外部可访问地址（公网访问/下载链接必填，例如 `公网IP:9000`）
 
 若环境支持 dotfile，可将 `env.example` 复制为 `.env` 并按需修改；否则请在宿主机或 CI 中设置为系统环境变量。
 
@@ -69,6 +69,14 @@ docker compose run --rm tts_service python -c "from huggingface_hub import snaps
 
 详见：`docs/offline-assets.md`
 
+## 4.2 预拉取 Moonshine ASR 模型（可选）
+
+Moonshine ASR 会在首次调用时自动下载模型；也可以提前拉取以减少首个任务的等待时间（模型会缓存到 `asr_models` 数据卷）：
+
+```bash
+docker compose run --rm asr_service python -c "import os, moonshine_onnx; moonshine_onnx.MoonshineOnnxModel(model_name=os.environ.get('ASR_MODEL_ID','moonshine/tiny')); print('Moonshine ASR model ready')"
+```
+
 ## 5. 启动与验证
 
 ```bash
@@ -83,6 +91,8 @@ docker compose logs -f
 ```
 
 ### 服务访问入口
+
+公网访问提示：将 `localhost` 替换为服务器公网 IP/域名；并在 `.env` 设置 `MINIO_PUBLIC_ENDPOINT=<公网IP:9000>` 以生成可访问的下载链接（安全组至少放行 80 与 9000）。
 
 | 服务 | 地址 | 说明 |
 | --- | --- | --- |

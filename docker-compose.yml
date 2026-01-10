@@ -125,7 +125,6 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD:-dubbing123}
       # MinIO 配置
       MINIO_ENDPOINT: minio:9000
-      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT}
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin123}
       MINIO_USE_SSL: "false"
@@ -170,13 +169,15 @@ services:
     environment:
       ASR_HOST: 0.0.0.0
       ASR_PORT: 8002
-      ASR_MODEL_ID: ${ASR_MODEL_ID:-moonshine-base}
-      ASR_DEVICE: ${ASR_DEVICE:-cuda}
+      ASR_MODEL_ID: ${ASR_MODEL_ID:-moonshine/tiny}
+      ASR_DEVICE: ${ASR_DEVICE:-cpu}
       ASR_COMPUTE_TYPE: ${ASR_COMPUTE_TYPE:-float16}
       ASR_BACKEND: ${ASR_BACKEND:-moonshine_onnx}
       TARGET_SAMPLE_RATE: 16000
       AUDIO_TEMP_DIR: /app/temp/audio
-      HF_ENDPOINT: https://hf-mirror.com
+      HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
+      HF_HOME: ${ASR_HF_HOME:-/app/models/hf_home}
+      HF_HUB_CACHE: ${ASR_HF_HUB_CACHE:-/app/models/hf_cache}
     ports:
       - "${ASR_PORT:-8002}:8002"
     volumes:

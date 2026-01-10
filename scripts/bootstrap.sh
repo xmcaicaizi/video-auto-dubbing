@@ -9,7 +9,7 @@ ENV_FILE="$ROOT_DIR/.env"
 ENV_EXAMPLE="$ROOT_DIR/env.example"
 
 if ! command -v docker >/dev/null 2>&1; then
-    echo "错误: 未找到 docker，请先安装 Docker Desktop。"
+    echo "错误: 未找到 docker，请先安装 Docker Engine 和 Docker Compose。"
     exit 1
 fi
 
@@ -44,6 +44,19 @@ else:
         local_dir_use_symlinks=False,
     )
     print("IndexTTS2 模型下载完成")
+PY
+
+echo "检查 Moonshine ASR 模型..."
+docker compose run --rm asr_service python - <<'PY'
+import os
+
+import moonshine_onnx
+
+model_id = os.environ.get("ASR_MODEL_ID", "moonshine/tiny")
+
+# Instantiate model to trigger HuggingFace download into cache/volume.
+moonshine_onnx.MoonshineOnnxModel(model_name=model_id)
+print(f"Moonshine ASR 模型已就绪: {model_id}")
 PY
 
 echo "启动服务..."

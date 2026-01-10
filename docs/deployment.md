@@ -32,6 +32,7 @@ cp env.example .env
 
 关键配置建议关注：
 - `POSTGRES_PASSWORD` / `MINIO_ROOT_PASSWORD` / `RABBITMQ_PASSWORD`
+- `MINIO_PUBLIC_ENDPOINT`（公网访问时必填，用于生成可访问的下载链接，例如 `your.public.ip:9000`）
 - `GLM_API_KEY` / `GLM_API_URL` / `GLM_MODEL`
 - `TTS_PORT`（直连 TTS 服务端口，`env.example` 中为 8000；未设置则按 compose 默认映射 8001:8000）
 - `INDEXTTS_MODEL_DIR` / `INDEXTTS_CFG_PATH` / `INDEXTTS_DEVICE`
@@ -47,13 +48,21 @@ docker compose run --rm tts_service python -c "from huggingface_hub import snaps
 
 如需离线部署，请将模型解压到与 `INDEXTTS_MODEL_DIR` 一致的目录。
 
-4. **启动服务**
+4. **（可选）预拉取 Moonshine ASR 模型**
+
+Moonshine ASR 会在首次调用时自动下载模型；也可以提前拉取以减少首个任务的等待时间：
+
+```bash
+docker compose run --rm asr_service python -c "import os, moonshine_onnx; moonshine_onnx.MoonshineOnnxModel(model_name=os.environ.get('ASR_MODEL_ID','moonshine/tiny')); print('Moonshine ASR model ready')"
+```
+
+5. **启动服务**
 
 ```bash
 docker compose up -d
 ```
 
-5. **验证状态**
+6. **验证状态**
 
 ```bash
 docker compose ps
@@ -73,9 +82,9 @@ curl http://localhost:8080/health
 
 ## 云服务部署要点（Linux）
 
-- **安全组/防火墙**：仅开放必要端口（通常为 80/443；管理端口 9001/15672 建议内网或限制访问）。
+- **安全组/防火墙**：仅开放必要端口（通常为 80/443；如需要通过预签名链接直连 MinIO 下载，请开放 9000；管理端口 9001/15672 建议内网或限制访问）。
 - **GPU 主机**：选择带 NVIDIA GPU 的实例并安装驱动与 Container Toolkit，确保容器可见 GPU。
-- **对象存储访问**：如 ASR/TTS 与 MinIO 不在同一网络，请设置 `MINIO_PUBLIC_ENDPOINT` 为可访问地址。
+- **对象存储访问**：请将 `MINIO_PUBLIC_ENDPOINT` 设置为浏览器可访问的地址（例如 `公网IP:9000` 或域名），用于生成可下载的预签名链接。
 - **持久化存储**：使用云硬盘挂载 Docker 数据目录，避免重建容器导致模型与数据丢失。
 
 ## 扩展 Worker 实例

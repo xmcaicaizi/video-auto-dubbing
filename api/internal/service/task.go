@@ -221,7 +221,11 @@ func (s *TaskService) GetTaskResult(ctx context.Context, taskID uuid.UUID) (map[
 			segResp["mt_text"] = *seg.MtText
 		}
 		if seg.TtsAudioKey != nil {
-			segResp["tts_audio_url"] = fmt.Sprintf("http://minio:9000/%s", *seg.TtsAudioKey)
+			url, err := s.storage.PresignedGetURL(ctx, *seg.TtsAudioKey, time.Hour)
+			if err != nil {
+				return nil, fmt.Errorf("failed to generate tts audio url: %w", err)
+			}
+			segResp["tts_audio_url"] = url
 		}
 		segments = append(segments, segResp)
 	}
@@ -234,7 +238,11 @@ func (s *TaskService) GetTaskResult(ctx context.Context, taskID uuid.UUID) (map[
 	}
 
 	if task.OutputVideoKey != nil {
-		result["output_video_url"] = fmt.Sprintf("http://minio:9000/%s", *task.OutputVideoKey)
+		url, err := s.storage.PresignedGetURL(ctx, *task.OutputVideoKey, time.Hour)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate output video url: %w", err)
+		}
+		result["output_video_url"] = url
 	}
 
 	return result, nil

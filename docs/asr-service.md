@@ -26,7 +26,7 @@ ASR 服务通过 Moonshine ONNX 模型提供语音识别能力，返回句级时
 **请求参数**
 ```json
 {
-  "audio_url": "http://minio:9000/videos/xxx.wav",
+  "audio_url": "http://minio.example.com:9000/videos/<object_key>?X-Amz-Algorithm=...",
   "language": "zh"
 }
 ```
@@ -51,6 +51,9 @@ ASR 服务通过 Moonshine ONNX 模型提供语音识别能力，返回句级时
 - `ASR_DEVICE`: 运行设备（默认 `cpu`）
 - `ASR_COMPUTE_TYPE`: 推理精度（默认 `float16`）
 - `ASR_BACKEND`: 后端模式（`moonshine_onnx`）
+- `HF_ENDPOINT`: HuggingFace 访问地址（可选，国内可配置镜像）
+- `ASR_HF_HOME`: HuggingFace home（建议指向 `/app/models` 持久化卷）
+- `ASR_HF_HUB_CACHE`: HuggingFace hub cache（建议指向 `/app/models` 持久化卷）
 
 ## 5. 依赖说明
 - 识别依赖 `useful-moonshine-onnx`（从官方仓库的 `moonshine-onnx` 子目录安装）。

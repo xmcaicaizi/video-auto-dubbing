@@ -412,7 +412,21 @@
         function normalizeGradioURL(url) {
             const s = (url || '').trim();
             if (!s) return '';
-            return s.endsWith('/') ? s.slice(0, -1) : s;
+            try {
+                const u = new URL(s);
+                u.search = '';
+                u.hash = '';
+                const normalized = u.toString();
+                return normalized.endsWith('/') ? normalized.slice(0, -1) : normalized;
+            } catch (_) {
+                const q = s.indexOf('?');
+                const h = s.indexOf('#');
+                let cut = s.length;
+                if (q >= 0) cut = Math.min(cut, q);
+                if (h >= 0) cut = Math.min(cut, h);
+                const normalized = s.slice(0, cut);
+                return normalized.endsWith('/') ? normalized.slice(0, -1) : normalized;
+            }
         }
 
         function syncTTSSettingsUI() {
@@ -446,7 +460,7 @@
                     alert('IndexTTS2 Gradio URL is required when using Remote Gradio backend');
                     return;
                 }
-                if (!/^https?:\\/\\//.test(next.indextts_gradio_url)) {
+                if (!(next.indextts_gradio_url.startsWith('http://') || next.indextts_gradio_url.startsWith('https://'))) {
                     alert('IndexTTS2 Gradio URL must start with http:// or https://');
                     return;
                 }

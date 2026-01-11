@@ -8,6 +8,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Optional
 import threading
+from urllib.parse import urlsplit, urlunsplit
 
 import numpy as np
 import soundfile as sf
@@ -17,6 +18,29 @@ from app.exceptions import InvalidParameterError, ModelNotLoadedError, Synthesis
 from app.models import ProsodyControl
 
 logger = logging.getLogger(__name__)
+
+def _estimate_max_mel_tokens(target_duration_ms: int) -> int:
+    if target_duration_ms <= 0:
+        return 1500
+    # Heuristic: mel frames are typically ~80-100 per second (e.g. hop=256 at 22.05kHz ≈ 86/s).
+    # Add headroom to avoid "max_mel_tokens too small" runtime errors on longer clips.
+    # Cap the maximum value to prevent extremely long processing times for problematic inputs.
+    seconds = target_duration_ms / 1000.0
+    estimated = int(seconds * 100) + 256
+    # Cap at 10000 tokens (approximately 100 seconds of audio) to prevent excessive processing times
+    return min(max(1500, estimated), 10000)
+
+
+def _normalize_gradio_base_url(url: str) -> str:
+    s = (url or "").strip()
+    if not s:
+        return ""
+    parts = urlsplit(s)
+    if not parts.scheme or not parts.netloc:
+        return s.rstrip("/")
+    # Drop query/fragment (e.g. trailing "/?" breaks Gradio API calls).
+    cleaned = urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+    return cleaned.rstrip("/")
 
 
 class TTSSynthesizer:
@@ -34,7 +58,14 @@ class TTSSynthesizer:
         self._gradio_clients: Dict[str, tuple[object, threading.Lock]] = {}
         self._gradio_clients_lock = threading.Lock()
         if settings.max_concurrent_requests > 0:
-            self._executor = ThreadPoolExecutor(max_workers=settings.max_concurrent_requests)
+            max_workers = settings.max_concurrent_requests
+            if self._normalize_backend(settings.tts_backend) == "index_tts2_gradio" and max_workers > 1:
+                logger.info(
+                    "Remote IndexTTS2 (Gradio) only supports single-threaded inference; forcing max_concurrent_requests=1",
+                    extra={"configured": settings.max_concurrent_requests},
+                )
+                max_workers = 1
+            self._executor = ThreadPoolExecutor(max_workers=max_workers)
 
     def load_model(self) -> None:
         """Load the IndexTTS2 model.
@@ -207,7 +238,7 @@ class TTSSynthesizer:
         raise InvalidParameterError(f"Unsupported TTS backend: {value}")
 
     def _get_gradio_client(self, base_url: str) -> tuple[object, threading.Lock]:
-        normalized = base_url.strip().rstrip("/")
+        normalized = _normalize_gradio_base_url(base_url)
         with self._gradio_clients_lock:
             cached = self._gradio_clients.get(normalized)
             if cached:
@@ -216,7 +247,15 @@ class TTSSynthesizer:
                 from gradio_client import Client
             except Exception as e:  # pragma: no cover - optional dependency
                 raise ModelNotLoadedError(f"gradio_client is not installed: {e}") from e
-            client = Client(normalized)
+            # Remote Gradio inference can be slow (upload + queue + generation).
+            # Increase HTTP timeouts to avoid premature disconnects (e.g. httpx read timeout).
+            client = Client(
+                normalized,
+                verbose=False,
+                httpx_kwargs={
+                    "timeout": 1200.0,
+                },
+            )
             lock = threading.Lock()
             self._gradio_clients[normalized] = (client, lock)
             return client, lock
@@ -225,7 +264,7 @@ class TTSSynthesizer:
         if isinstance(output, str):
             return Path(output)
         if isinstance(output, dict):
-            for key in ("path", "name", "filepath"):
+            for key in ("path", "name", "filepath", "value"):
                 value = output.get(key)
                 if isinstance(value, str) and value:
                     return Path(value)
@@ -238,6 +277,7 @@ class TTSSynthesizer:
         text: str,
         prompt_audio: str,
         gradio_url: str,
+        target_duration_ms: int,
     ) -> tuple[np.ndarray, int]:
         try:
             from gradio_client import handle_file
@@ -248,33 +288,42 @@ class TTSSynthesizer:
         prompt_path = self._prepare_prompt_audio(prompt_audio)
 
         with lock:
-            result = client.predict(
-                emo_control_method="与音色参考音频相同",
-                prompt=handle_file(str(prompt_path)),
-                text=text,
-                emo_ref_path=handle_file(str(prompt_path)),
-                emo_weight=0.8,
-                vec1=0,
-                vec2=0,
-                vec3=0,
-                vec4=0,
-                vec5=0,
-                vec6=0,
-                vec7=0,
-                vec8=0,
-                emo_text="",
-                emo_random=False,
-                max_text_tokens_per_segment=120,
-                param_16=True,
-                param_17=0.8,
-                param_18=30,
-                param_19=0.8,
-                param_20=0,
-                param_21=3,
-                param_22=10,
-                param_23=1500,
-                api_name="/gen_single",
-            )
+            try:
+                result = client.predict(
+                    # Match the remote Gradio Radio choices exactly.
+                    emo_control_method="与音色参考音频相同",
+                    prompt=handle_file(str(prompt_path)),
+                    text=text,
+                    emo_ref_path=handle_file(str(prompt_path)),
+                    emo_weight=0.8,
+                    vec1=0,
+                    vec2=0,
+                    vec3=0,
+                    vec4=0,
+                    vec5=0,
+                    vec6=0,
+                    vec7=0,
+                    vec8=0,
+                    emo_text="",
+                    emo_random=False,
+                    max_text_tokens_per_segment=120,
+                    param_16=True,
+                    param_17=0.8,
+                    param_18=30,
+                    param_19=0.8,
+                    param_20=0,
+                    param_21=3,
+                    param_22=10,
+                    param_23=_estimate_max_mel_tokens(target_duration_ms),
+                    api_name="/gen_single",
+                )
+            except Exception as e:
+                msg = str(e)
+                if "/upload" in msg and "404" in msg:
+                    raise InvalidParameterError(
+                        f"IndexTTS2 Gradio URL is not reachable (maybe expired): {gradio_url}"
+                    ) from e
+                raise
 
         output_path = self._extract_gradio_filepath(result)
         if not output_path.exists():
@@ -293,6 +342,7 @@ class TTSSynthesizer:
         self,
         text: str,
         prompt_audio_url: Optional[str],
+        target_duration_ms: int,
         tts_backend: Optional[str] = None,
         indextts_gradio_url: Optional[str] = None,
     ) -> tuple[np.ndarray, int]:
@@ -304,7 +354,7 @@ class TTSSynthesizer:
                 self.load_model()
             return self._call_index_tts(text=text, prompt_audio=prompt_audio)
 
-        gradio_url = (indextts_gradio_url or settings.indextts_gradio_url).strip()
+        gradio_url = _normalize_gradio_base_url(indextts_gradio_url or settings.indextts_gradio_url)
         if not gradio_url:
             raise InvalidParameterError(
                 "indextts_gradio_url is required when tts_backend=index_tts2_gradio"
@@ -312,7 +362,12 @@ class TTSSynthesizer:
         if not gradio_url.startswith(("http://", "https://")):
             raise InvalidParameterError("indextts_gradio_url must start with http:// or https://")
 
-        return self._call_gradio_index_tts2(text=text, prompt_audio=prompt_audio, gradio_url=gradio_url)
+        return self._call_gradio_index_tts2(
+            text=text,
+            prompt_audio=prompt_audio,
+            gradio_url=gradio_url,
+            target_duration_ms=target_duration_ms,
+        )
 
     def _adjust_duration(self, audio: np.ndarray, target_duration_ms: int, sample_rate: int) -> np.ndarray:
         """Adjust audio duration to match target duration.
@@ -397,8 +452,26 @@ class TTSSynthesizer:
         Raises:
             ModelNotLoadedError: If model is not loaded.
             SynthesisError: If synthesis fails.
+            InvalidParameterError: If text is too long or contains problematic patterns.
         """
+        # Validate text length and detect problematic patterns
+        if len(text) > 10000:
+            raise InvalidParameterError(f"Text too long: {len(text)} characters (max 10000)")
+
+        # Detect repetitive patterns that may indicate ASR/transcription errors
+        words = text.split()
+        if len(words) > 50:
+            # Check if the text contains excessive repetition (e.g., "1984. 1984. 1984...")
+            # by looking at the ratio of unique words to total words
+            unique_words = set(words)
+            if len(unique_words) < len(words) * 0.1:  # Less than 10% unique words
+                raise InvalidParameterError(
+                    f"Text contains excessive repetition ({len(words)} words, {len(unique_words)} unique). "
+                    "This may indicate a processing error in the input."
+                )
+
         resolved_backend = self._normalize_backend(tts_backend)
+
         logger.info(
             "Synthesizing audio",
             extra={
@@ -415,6 +488,7 @@ class TTSSynthesizer:
             audio_data, produced_sr = self._call_tts(
                 text=text,
                 prompt_audio_url=prompt_audio_url,
+                target_duration_ms=target_duration_ms,
                 tts_backend=resolved_backend,
                 indextts_gradio_url=indextts_gradio_url,
             )
@@ -506,7 +580,7 @@ class TTSSynthesizer:
             segment_audios = []
 
             # Use thread pool for concurrent synthesis if executor is available
-            if self._executor and len(segments) > 1:
+            if self._executor and len(segments) > 1 and resolved_backend != "index_tts2_gradio":
                 futures = {}
                 for idx, seg in enumerate(segments):
                     future = self._executor.submit(

@@ -56,6 +56,14 @@ func NewClient(cfg config.TTSConfig, logger *zap.Logger) *Client {
 	}
 }
 
+func shouldRetryStatus(status int) bool {
+	return status == http.StatusTooManyRequests ||
+		status == http.StatusServiceUnavailable ||
+		status == http.StatusBadGateway ||
+		status == http.StatusGatewayTimeout ||
+		status == http.StatusInternalServerError
+}
+
 // Synthesize performs TTS synthesis.
 func (c *Client) Synthesize(ctx context.Context, req SynthesisRequest) (io.ReadCloser, error) {
 	// Create request body
@@ -82,6 +90,15 @@ func (c *Client) Synthesize(ctx context.Context, req SynthesisRequest) (io.ReadC
 		resp, err = c.client.Do(httpReq)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			break
+		}
+		if err == nil && resp != nil && !shouldRetryStatus(resp.StatusCode) {
+			// Non-retryable response (e.g. invalid params); keep body for error message.
+			break
+		}
+		if resp != nil {
+			// Ensure connections are reusable across retries.
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
 		}
 		if i < maxRetries-1 {
 			time.Sleep(time.Duration(i+1) * time.Second)

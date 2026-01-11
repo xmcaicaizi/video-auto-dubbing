@@ -39,7 +39,13 @@ if [ -z "$GLM_KEY" ] || [ "$GLM_KEY" = "your_glm_api_key" ]; then
 fi
 
 echo "检查 IndexTTS2 模型权重..."
-"${COMPOSE[@]}" run --rm tts_service python - <<'PY'
+LOCAL_INDEXTTS_DIR="$ROOT_DIR/index-tts-windows/checkpoints"
+if [ -f "$LOCAL_INDEXTTS_DIR/config.yaml" ]; then
+    echo "已发现本地 IndexTTS2 checkpoints: $LOCAL_INDEXTTS_DIR"
+    echo "将通过 docker bind mount 复用，跳过容器内下载"
+else
+    echo "未发现本地 IndexTTS2 checkpoints，尝试在容器中下载到持久存储/挂载目录..."
+    "${COMPOSE[@]}" run --rm tts_service python - <<'PY'
 from pathlib import Path
 import os
 from huggingface_hub import snapshot_download
@@ -57,6 +63,7 @@ else:
     )
     print("IndexTTS2 模型下载完成")
 PY
+fi
 
 echo "检查 Moonshine ASR 模型..."
 "${COMPOSE[@]}" run --rm asr_service python - <<'PY'

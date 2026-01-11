@@ -87,7 +87,22 @@ class MoonshineONNXTranscriber:
         audio, sr = sf.read(io.BytesIO(data))
         if audio.ndim > 1:
             audio = np.mean(audio, axis=1)
-        return audio.astype(np.float32), sr
+        audio = audio.astype(np.float32)
+
+        target_sr = int(getattr(settings, "target_sample_rate", 16000) or 16000)
+        if sr > 0 and target_sr > 0 and sr != target_sr:
+            try:
+                from scipy.signal import resample_poly
+
+                g = math.gcd(int(sr), target_sr)
+                up = target_sr // g
+                down = int(sr) // g
+                audio = resample_poly(audio, up, down).astype(np.float32)
+                sr = target_sr
+            except Exception:
+                pass
+
+        return audio, sr
 
     def _resolve_model_id(self, language: str | None) -> str:
         model_id = settings.asr_model_id

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"vedio/worker/internal/asr"
@@ -230,6 +231,18 @@ func decodeTaskMessage(body []byte) (models.TaskMessage, uuid.UUID, error) {
 func (w *Worker) runStepWithStatus(ctx context.Context, processor StepProcessor, taskID uuid.UUID, taskMsg models.TaskMessage) error {
 	step := processor.Name()
 
+	taskExists, err := w.taskExists(ctx, taskID)
+	if err != nil {
+		return fmt.Errorf("failed to check task existence: %w", err)
+	}
+	if !taskExists {
+		w.logger.Info("Task not found, skipping message",
+			zap.String("step", step),
+			zap.String("task_id", taskID.String()),
+		)
+		return nil
+	}
+
 	stepCtx, cancel := w.withStepTimeout(ctx, step)
 	defer cancel()
 
@@ -261,6 +274,18 @@ func (w *Worker) runStepWithStatus(ctx context.Context, processor StepProcessor,
 	processErr := processor.Process(stepCtx, taskID, taskMsg)
 	duration := time.Since(startTime)
 
+	taskStillExists, err := w.taskExists(ctx, taskID)
+	if err != nil {
+		return fmt.Errorf("failed to re-check task existence: %w", err)
+	}
+	if !taskStillExists {
+		w.logger.Info("Task deleted during processing, skipping status updates",
+			zap.String("step", step),
+			zap.String("task_id", taskID.String()),
+		)
+		return nil
+	}
+
 	if processErr != nil {
 		// Update step status to failed
 		errMsg := processErr.Error()
@@ -269,11 +294,11 @@ func (w *Worker) runStepWithStatus(ctx context.Context, processor StepProcessor,
 		}
 
 		// Retry logic
-		if taskMsg.Attempt < maxRetries {
+		if taskMsg.Attempt < maxRetries && !isNonRetryableError(processErr) {
 			return w.retryMessage(ctx, taskMsg, step)
 		}
 
-		// Max retries reached, update task status
+		// Max retries reached (or non-retryable error), update task status
 		if err := w.updateTaskStatus(ctx, taskID, "failed", &errMsg); err != nil {
 			w.logger.Error("Failed to update task status", zap.Error(err))
 		}
@@ -303,6 +328,21 @@ func (w *Worker) runStepWithStatus(ctx context.Context, processor StepProcessor,
 	return nil
 }
 
+func isNonRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	// Common client/config errors; retrying won't help.
+	return strings.Contains(msg, "status 400") ||
+		strings.Contains(msg, "status 401") ||
+		strings.Contains(msg, "status 403") ||
+		strings.Contains(msg, "status 404") ||
+		strings.Contains(msg, "\"error\":\"invalid_parameter\"") ||
+		strings.Contains(msg, "\"error\":\"text_too_long\"") ||
+		strings.Contains(msg, "has empty text")
+}
+
 // getStepStatus gets the status of a task step.
 func (w *Worker) getStepStatus(ctx context.Context, taskID uuid.UUID, step string) (string, error) {
 	query := `SELECT status FROM task_steps WHERE task_id = $1 AND step = $2 ORDER BY attempt DESC LIMIT 1`
@@ -319,6 +359,15 @@ func (w *Worker) updateStepStatus(ctx context.Context, taskID uuid.UUID, step st
 // updateStepStatusWithMetrics updates the status of a task step with metrics.
 func (w *Worker) updateStepStatusWithMetrics(ctx context.Context, taskID uuid.UUID, step string, attempt int, status string, errorMsg *string, metricsJSON *string) error {
 	now := time.Now()
+
+	// If the task was deleted (e.g. user pressed "删除"), silently skip status updates.
+	taskExists, err := w.taskExists(ctx, taskID)
+	if err != nil {
+		return fmt.Errorf("failed to check task existence: %w", err)
+	}
+	if !taskExists {
+		return nil
+	}
 
 	// Check if step record exists
 	var exists bool
@@ -369,6 +418,14 @@ func (w *Worker) updateStepStatusWithMetrics(ctx context.Context, taskID uuid.UU
 	}
 
 	return nil
+}
+
+func (w *Worker) taskExists(ctx context.Context, taskID uuid.UUID) (bool, error) {
+	var exists bool
+	if err := w.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM tasks WHERE id = $1)`, taskID).Scan(&exists); err != nil {
+		return false, err
+	}
+	return exists, nil
 }
 
 // updateTaskStatus updates the task status.

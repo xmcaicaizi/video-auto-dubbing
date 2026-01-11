@@ -46,16 +46,6 @@ func (p *TTSProcessor) Process(ctx context.Context, taskID uuid.UUID, msg models
 		return fmt.Errorf("failed to parse payload: %w", err)
 	}
 
-	p.deps.Logger.Info("Processing TTS",
-		zap.String("task_id", taskID.String()),
-		zap.Int("segment_idx", payload.SegmentIdx),
-		zap.String("text", payload.Text),
-		zap.Int("target_duration_ms", payload.TargetDurationMs),
-		zap.Int("batch_size", p.resolveBatchSize(payload)),
-		zap.Int("max_concurrency", p.resolveConcurrency(payload)),
-		zap.Int("max_retries", p.resolveMaxRetries(payload)),
-	)
-
 	sourceAudioPath, err := p.ensureSourceAudio(ctx, taskID)
 	if err != nil {
 		return err
@@ -76,6 +66,26 @@ func (p *TTSProcessor) Process(ctx context.Context, taskID uuid.UUID, msg models
 		return err
 	}
 
+	concurrency := p.resolveConcurrency(payload)
+	if strings.EqualFold(strings.TrimSpace(ttsCfg.backend), "index_tts2_gradio") || strings.TrimSpace(ttsCfg.gradioURL) != "" {
+		concurrency = 1
+	}
+	if concurrency <= 0 {
+		concurrency = 1
+	}
+
+	p.deps.Logger.Info("Processing TTS",
+		zap.String("task_id", taskID.String()),
+		zap.Int("segment_idx", payload.SegmentIdx),
+		zap.String("text", payload.Text),
+		zap.Int("target_duration_ms", payload.TargetDurationMs),
+		zap.Int("batch_size", p.resolveBatchSize(payload)),
+		zap.Int("max_concurrency", concurrency),
+		zap.Int("max_retries", p.resolveMaxRetries(payload)),
+		zap.String("tts_backend", ttsCfg.backend),
+		zap.String("indextts_gradio_url", ttsCfg.gradioURL),
+	)
+
 	pendingSegments, err := p.loadPendingSegments(ctx, taskID, payload)
 	if err != nil {
 		return err
@@ -87,11 +97,6 @@ func (p *TTSProcessor) Process(ctx context.Context, taskID uuid.UUID, msg models
 
 	maxRetries := p.resolveMaxRetries(payload)
 	retryDelay := p.resolveRetryDelay(payload)
-
-	concurrency := p.resolveConcurrency(payload)
-	if concurrency <= 0 {
-		concurrency = 1
-	}
 
 	sem := make(chan struct{}, concurrency)
 	var wg sync.WaitGroup
@@ -313,6 +318,30 @@ func (p *TTSProcessor) processSegmentWithRetry(ctx context.Context, taskID uuid.
 }
 
 func (p *TTSProcessor) processSingleSegment(ctx context.Context, taskID uuid.UUID, segment ttsSegment, targetLang string, promptInfo promptInfo, ttsCfg taskTTSConfig) error {
+	// Skip garbage text (ASR errors) to avoid TTS failures
+	if isGarbageTTSText(segment.text) {
+		p.deps.Logger.Warn("Skipping TTS for segment with garbage text (ASR error)",
+			zap.String("task_id", taskID.String()),
+			zap.Int("segment_idx", segment.idx),
+			zap.Int("text_length", len(segment.text)))
+		// Mark as synthesized with empty audio to avoid blocking the pipeline
+		// The segment will be excluded from final audio merge
+		return nil
+	}
+
+	// Check if task still exists before calling TTS API
+	taskExists, err := p.checkTaskExists(ctx, taskID)
+	if err != nil {
+		return fmt.Errorf("failed to check task existence: %w", err)
+	}
+	if !taskExists {
+		p.deps.Logger.Info("Task deleted, skipping TTS synthesis",
+			zap.String("task_id", taskID.String()),
+			zap.Int("segment_idx", segment.idx),
+		)
+		return fmt.Errorf("task %s was deleted", taskID.String())
+	}
+
 	if strings.TrimSpace(segment.text) == "" {
 		return fmt.Errorf("segment %d has empty text", segment.idx)
 	}
@@ -326,7 +355,7 @@ func (p *TTSProcessor) processSingleSegment(ctx context.Context, taskID uuid.UUI
 		ProsodyControl:   segment.prosody,
 		OutputFormat:     "wav",
 		SampleRate:       22050,
-		TTSBackend:        ttsCfg.backend,
+		TTSBackend:       ttsCfg.backend,
 		IndexTTSGradioURL: ttsCfg.gradioURL,
 	}
 
@@ -745,6 +774,14 @@ func promptKeyForTask(taskID uuid.UUID, speakerID string) string {
 }
 
 // mergeSegmentAudios merges all segment audio files into a single dub.wav file.
+func (p *TTSProcessor) checkTaskExists(ctx context.Context, taskID uuid.UUID) (bool, error) {
+	var exists bool
+	if err := p.deps.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM tasks WHERE id = $1)`, taskID).Scan(&exists); err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
 func (p *TTSProcessor) mergeSegmentAudios(ctx context.Context, taskID uuid.UUID) error {
 	p.deps.Logger.Info("Merging segment audios", zap.String("task_id", taskID.String()))
 
@@ -769,14 +806,49 @@ func (p *TTSProcessor) mergeSegmentAudios(ctx context.Context, taskID uuid.UUID)
 		if err := rows.Scan(&s.idx, &s.startMs, &s.endMs, &s.ttsAudioKey); err != nil {
 			continue
 		}
+		// Skip segments without TTS audio (garbage text/ASR errors)
 		if s.ttsAudioKey == "" {
-			return fmt.Errorf("segment %d has no TTS audio", s.idx)
+			p.deps.Logger.Warn("Skipping segment without TTS audio (likely garbage text)",
+				zap.String("task_id", taskID.String()),
+				zap.Int("segment_idx", s.idx))
+			continue
 		}
 		segments = append(segments, s)
 	}
 
 	if len(segments) == 0 {
-		return fmt.Errorf("no segments found")
+		p.deps.Logger.Warn("No valid TTS segments to merge (all segments may be garbage text)",
+			zap.String("task_id", taskID.String()))
+		// Create an empty audio file to avoid blocking the pipeline
+		dubKey := fmt.Sprintf("tts/%s/dub.wav", taskID)
+		emptyAudio := []byte{
+			// Minimal WAV header for 1 second of silence
+			0x52, 0x49, 0x46, 0x46, // "RIFF"
+			0x24, 0x08, 0x00, 0x00, // file size - 8
+			0x57, 0x41, 0x56, 0x45, // "WAVE"
+			0x66, 0x6d, 0x74, 0x20, // "fmt "
+			0x10, 0x00, 0x00, 0x00, // chunk size
+			0x01, 0x00,             // audio format (PCM)
+			0x01, 0x00,             // channels (mono)
+			0x22, 0x56, 0x00, 0x00, // sample rate (22050)
+			0x44, 0xac, 0x00, 0x00, // byte rate
+			0x02, 0x00,             // block align
+			0x10, 0x00,             // bits per sample
+			0x64, 0x61, 0x74, 0x61, // "data"
+			0x00, 0x08, 0x00, 0x00, // data size
+		}
+		// Add silence samples (1 second at 22050 Hz, 16-bit mono = 44100 bytes)
+		silence := make([]byte, 44100)
+		emptyAudio = append(emptyAudio, silence...)
+
+		if err := p.deps.Storage.PutObject(ctx, dubKey, bytes.NewReader(emptyAudio), int64(len(emptyAudio)), "audio/wav"); err != nil {
+			return fmt.Errorf("failed to upload empty audio: %w", err)
+		}
+		p.deps.Logger.Info("Created empty audio file (no valid segments)",
+			zap.String("task_id", taskID.String()),
+			zap.String("dub_key", dubKey),
+			zap.Int("file_size", len(emptyAudio)))
+		return nil
 	}
 
 	// Fast path: single segment needs no concat. This avoids ffmpeg concat edge-cases and
@@ -906,4 +978,32 @@ func (p *TTSProcessor) mergeSegmentAudios(ctx context.Context, taskID uuid.UUID)
 	)
 
 	return nil
+}
+
+// isGarbageTTSText detects ASR/transcription errors by checking for repetitive patterns.
+// This is a duplicate of the logic in TTS synthesizer to detect garbage before API call.
+func isGarbageTTSText(text string) bool {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return false
+	}
+
+	words := strings.Fields(text)
+	if len(words) < 50 {
+		return false
+	}
+
+	// Count unique words
+	uniqueWords := make(map[string]bool)
+	for _, word := range words {
+		uniqueWords[word] = true
+	}
+
+	// If less than 10% unique words, it's likely garbage (repetitive pattern)
+	uniqueRatio := float64(len(uniqueWords)) / float64(len(words))
+	if uniqueRatio < 0.1 {
+		return true
+	}
+
+	return false
 }

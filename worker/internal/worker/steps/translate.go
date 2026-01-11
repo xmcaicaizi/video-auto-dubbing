@@ -147,6 +147,33 @@ func (p *TranslateProcessor) translateBatches(ctx context.Context, taskID uuid.U
 		maxTextLength = 4000
 	}
 
+	// Validate segments and skip garbage text (ASR errors)
+	validSegments := make([]translateSegment, 0, len(segments))
+	for _, seg := range segments {
+		if isGarbageText(seg.srcText) {
+			p.deps.Logger.Warn("Skipping segment with garbage text (ASR error)",
+				zap.String("task_id", taskID.String()),
+				zap.Int("segment_idx", seg.idx),
+				zap.Int("text_length", len(seg.srcText)))
+			// Mark as translated with original text to avoid blocking the pipeline
+			if err := p.updateSegmentTranslation(ctx, taskID, seg.idx, seg.srcText); err != nil {
+				p.deps.Logger.Error("Failed to update garbage segment",
+					zap.String("task_id", taskID.String()),
+					zap.Int("segment_idx", seg.idx),
+					zap.Error(err))
+			}
+			continue
+		}
+		validSegments = append(validSegments, seg)
+	}
+	segments = validSegments
+
+	if len(segments) == 0 {
+		p.deps.Logger.Info("No valid segments to translate after garbage text filtering",
+			zap.String("task_id", taskID.String()))
+		return nil
+	}
+
 	for start := 0; start < len(segments); start += batchSize {
 		end := int(math.Min(float64(len(segments)), float64(start+batchSize)))
 		batch := segments[start:end]
@@ -259,4 +286,51 @@ func splitText(text string, maxLength int) []string {
 		start = end
 	}
 	return chunks
+}
+
+// isGarbageText detects ASR/transcription errors by checking for repetitive patterns.
+// Returns true if the text appears to be garbage (e.g., "1984. 1984. 1984. ...").
+func isGarbageText(text string) bool {
+	// Trim and check empty
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return false
+	}
+
+	words := strings.Fields(text)
+	if len(words) < 20 {
+		// Too short to be definitely garbage - let it through
+		return false
+	}
+
+	// Count unique words
+	uniqueWords := make(map[string]bool)
+	for _, word := range words {
+		uniqueWords[word] = true
+	}
+
+	// If less than 10% unique words, it's likely garbage (repetitive pattern)
+	uniqueRatio := float64(len(uniqueWords)) / float64(len(words))
+	if uniqueRatio < 0.1 {
+		return true
+	}
+
+	// Check for specific ASR error patterns: year repetitions like "1984. 1984. 1984."
+	// Count dots to detect this pattern
+	dotCount := strings.Count(text, ".")
+	if dotCount > 10 {
+		// High frequency of dots suggests year/number repetition
+		// Calculate average word length
+		totalLen := 0
+		for _, word := range words {
+			totalLen += len(word)
+		}
+		avgLen := float64(totalLen) / float64(len(words))
+		// If average word length is very short (just numbers), it's likely garbage
+		if avgLen < 5.0 {
+			return true
+		}
+	}
+
+	return false
 }

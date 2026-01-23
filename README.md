@@ -100,13 +100,86 @@
 
 ### 4) TTS（IndexTTS-2 / index-tts-vllm）
 
-- 建议在 AutoDL 平台租用 4090D 服务器部署。
-- 使用官方仓库：
-  - https://github.com/Ksuriuri/index-tts-vllm?tab=readme-ov-file
-- 部署步骤：
-  1. 在服务器上克隆仓库并按官方说明安装依赖
-  2. 用本仓库提供的 `api_server_v2.py` **完整替换**服务端同名文件
-  3. 启动 TTS 服务并在 `.env` 配置 `TTS_SERVICE_URL`
+建议在 AutoDL 平台租用 4090D 服务器部署，提供两种部署方法：
+
+#### 方法一：手动部署（推荐用于学习）
+
+1. **租用服务器并打开 Jupyter Notebook**
+
+   ![打开 Jupyter Notebook](image.png)
+
+   在 AutoDL 租用 RTX 4090/4090D 实例，启动后点击"打开 JupyterLab"。
+
+2. **克隆官方仓库并安装依赖**
+
+   在 Notebook 终端执行：
+   ```bash
+   cd /root/autodl-tmp
+   git clone https://github.com/Ksuriuri/index-tts-vllm.git
+   cd index-tts-vllm
+   pip install -r requirements.txt
+
+   # 下载模型
+   pip install modelscope
+   modelscope download IndexTeam/IndexTTS-2 --local_dir checkpoints/IndexTTS-2-vLLM
+   ```
+
+3. **替换优化版服务端文件**
+
+   将本仓库的 `api_server_v2.py` 上传到服务器并替换原文件。
+
+4. **启动服务**
+
+   ```bash
+   python api_server_v2.py \
+     --model_dir checkpoints/IndexTTS-2-vLLM \
+     --port 6006 \
+     --is_fp16 \
+     --gpu_memory_utilization 0.25 \
+     --qwenemo_gpu_memory_utilization 0.10
+   ```
+
+5. **获取公网访问地址**
+
+   ![获取公网端口](image-1.png)
+
+   在 AutoDL 控制台找到"自定义服务"，配置端口映射（容器端口 6006），获取公网 HTTPS 地址。
+
+6. **配置 `.env` 文件**
+
+   将获取的公网地址填入 `.env`：
+   ```bash
+   TTS_SERVICE_URL=https://your-autodl-instance.com:port
+   ```
+
+#### 方法二：使用 AutoDL 镜像（一键部署）
+
+1. **搜索并克隆镜像**
+
+   ![搜索镜像](image-2.png)
+
+   在 AutoDL 镜像市场搜索 `xmcaicaizi/video-auto-dubbing/indextts2-api`
+
+   ![克隆镜像](image-3.png)
+
+   点击"克隆镜像"创建实例（镜像审核中，通过后可用）
+
+2. **启动服务**
+
+   实例启动后，在 Notebook 终端执行：
+   ```bash
+   cd /root/autodl-tmp/index-tts-vllm
+   python api_server_v2.py \
+     --model_dir checkpoints/IndexTTS-2-vLLM \
+     --port 6006 \
+     --is_fp16 \
+     --gpu_memory_utilization 0.25 \
+     --qwenemo_gpu_memory_utilization 0.10
+   ```
+
+3. **获取公网地址并配置**
+
+   同方法一步骤 5-6。
 
 
 ### 基础设施

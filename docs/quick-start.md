@@ -84,13 +84,23 @@ cd index-tts-vllm
 pip install -r requirements.txt
 
 # 4. 下载模型
-modelscope download IndexTeam/IndexTTS-2 --local_dir checkpoints/IndexTTS-2
+modelscope download IndexTeam/IndexTTS-2 --local_dir checkpoints/IndexTTS-2-vLLM
 
-# 5. 启动服务
-python api_server_v2.py --model_dir checkpoints/IndexTTS-2 --port 8000
+# 5. ⚠️ 重要：替换为本项目优化的服务端文件
+# 从本项目根目录复制 api_server_v2.py 到 index-tts-vllm 目录
+# 或直接下载：
+# wget https://raw.githubusercontent.com/<your-repo>/main/api_server_v2.py
 
-# 6. 配置端口映射（AutoDL控制台）
-# 容器端口8000 -> 公网端口（如6006）
+# 6. 启动服务（使用优化版本）
+python api_server_v2.py \
+  --model_dir checkpoints/IndexTTS-2-vLLM \
+  --port 6006 \
+  --is_fp16 \
+  --gpu_memory_utilization 0.25 \
+  --qwenemo_gpu_memory_utilization 0.10
+
+# 7. 配置端口映射（AutoDL控制台）
+# 容器端口6006 -> 公网端口（启用HTTPS）
 ```
 
 ### 本地GPU部署

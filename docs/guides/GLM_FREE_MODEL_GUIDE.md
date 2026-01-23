@@ -8,7 +8,7 @@
 - **🗣️ 多语言支持**: 支持多达 26 种语言翻译
 - **⚡ 实时响应**: 支持流式输出，提升交互体验
 - **🎯 智能翻译**: 专业翻译能力，理解文化背景和语义细微差别
-- **📄 官方文档**: https://docs.bigmodel.cn/cn/guide/models/free/glm-4.7-flash
+- **📄 官方文档**: https://bigmodel.cn/dev/activities/free/glm-4-flash?gad_source=1&gad_campaignid=23375921191&gbraid=0AAAABBUMtgQOaMp5WGF7jZkWzAgboub1Q&gclid=Cj0KCQiA1czLBhDhARIsAIEc7ug0vfMFqoZfH3brlpsjH6CWuigCv-twBihDyyEI1x7HK9u9Bva9zTsaAvwLEALw_wcB
 
 ### 模型参数
 - **模型名称**: `glm-4-flash`
@@ -43,7 +43,6 @@
 
 ```
 模型: [GLM-4-Flash (免费模型，推荐) ▼]
-      └── GLM-4.5
       └── GLM-4
       └── GLM-4-Air
 
@@ -102,8 +101,8 @@
 | 模型 | 费用 | 速度 | 质量 | 推荐场景 |
 |------|------|------|------|----------|
 | GLM-4-Flash | 🆓 免费 | ⚡ 很快 | ⭐⭐⭐⭐ 优秀 | ✅ 视频翻译 |
-| GLM-4.5 | 💰 付费 | 🐌 较慢 | ⭐⭐⭐⭐⭐ 极佳 | 专业翻译 |
 | GLM-4 | 💰 付费 | 🚶 中等 | ⭐⭐⭐⭐ 良好 | 通用翻译 |
+| GLM-4-Air | 💰 付费 | ⚡ 较快 | ⭐⭐⭐⭐ 良好 | 轻量翻译 |
 
 ## 🔍 测试验证
 

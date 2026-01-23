@@ -61,6 +61,53 @@
 - **翻译**: GLM 大模型API
 
 
+## 部署与外部服务配置
+
+本系统依赖以下外部服务，配置项写入 `.env`（参考 `.env.example`）。**请勿提交真实密钥**。
+
+### 1) 火山引擎 ASR（语音识别）
+
+- 需要开通「大模型录音文件识别」能力，并获取 `APP_KEY / ACCESS_KEY / RESOURCE_ID`。
+- 文档与开通入口：
+  - https://www.volcengine.com/docs/6561/1354868?lang=zh
+- `.env` 关键配置：
+  - `VOLCENGINE_ASR_APP_KEY`
+  - `VOLCENGINE_ASR_ACCESS_KEY`
+  - `VOLCENGINE_ASR_RESOURCE_ID`
+  - 以及 `VOLCENGINE_ASR_ENABLE_*` 开关项
+
+### 2) 翻译 LLM（GLM）
+
+- 使用智谱 GLM 模型 API，需要申请 API Key。
+- `.env` 关键配置：
+  - `GLM_API_KEY`
+  - `GLM_API_URL`（默认 `https://open.bigmodel.cn/api/paas/v4/chat/completions`）
+  - `GLM_MODEL`（推荐 `glm-4-flash`）
+- **GLM 官方文档链接**：https://bigmodel.cn/dev/activities/free/glm-4-flash?gad_source=1&gad_campaignid=23375921191&gbraid=0AAAABBUMtgQOaMp5WGF7jZkWzAgboub1Q&gclid=Cj0KCQiA1czLBhDhARIsAIEc7ug0vfMFqoZfH3brlpsjH6CWuigCv-twBihDyyEI1x7HK9u9Bva9zTsaAvwLEALw_wcB
+
+### 3) OSS 对象存储（阿里云 OSS）
+
+- 用于生成公网可访问的音频 URL，供 ASR 服务拉取。
+- 建议使用 RAM 子账号并最小权限授权，避免使用主账号密钥。
+- `.env` 关键配置：
+  - `OSS_ENDPOINT`
+  - `OSS_BUCKET`
+  - `OSS_PUBLIC_DOMAIN`
+  - `OSS_PREFIX`
+  - `OSS_ACCESS_KEY_ID`
+  - `OSS_ACCESS_KEY_SECRET`
+- 指引：在阿里云控制台创建 Bucket，开启公网读（或自定义签名访问策略），并绑定上述参数。
+
+### 4) TTS（IndexTTS-2 / index-tts-vllm）
+
+- 建议在 AutoDL 平台租用 4090D 服务器部署。
+- 使用官方仓库：
+  - https://github.com/Ksuriuri/index-tts-vllm?tab=readme-ov-file
+- 部署步骤：
+  1. 在服务器上克隆仓库并按官方说明安装依赖
+  2. 用本仓库提供的 `api_server_v2.py` **完整替换**服务端同名文件
+  3. 启动 TTS 服务并在 `.env` 配置 `TTS_SERVICE_URL`
+
 
 ### 基础设施
 

@@ -52,7 +52,7 @@
     "batch_size": 20,
     "max_text_length": 4000,
     "glm": {
-      "model": "glm-4.5",
+      "model": "glm-4-flash",
       "temperature": 0.2,
       "rps": 0
     }

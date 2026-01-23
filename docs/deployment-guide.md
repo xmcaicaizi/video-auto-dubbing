@@ -178,9 +178,13 @@ cd index-tts-vllm
 
 pip install -r requirements.txt
 
+# ⚠️ 重要：替换为优化版 api_server_v2.py
+# 从本项目仓库下载或复制优化版文件
+# wget https://raw.githubusercontent.com/<your-repo>/main/api_server_v2.py -O api_server_v2.py
+
 # 下载模型
 pip install modelscope
-modelscope download IndexTeam/IndexTTS-2 --local_dir checkpoints/IndexTTS-2
+modelscope download IndexTeam/IndexTTS-2 --local_dir checkpoints/IndexTTS-2-vLLM
 
 # 创建systemd服务
 sudo tee /etc/systemd/system/tts.service > /dev/null <<EOF
@@ -193,7 +197,12 @@ Type=simple
 User=root
 WorkingDirectory=/root/autodl-tmp/index-tts-vllm
 Environment=CUDA_VISIBLE_DEVICES=0
-ExecStart=/root/miniconda3/bin/python api_server_v2.py --model_dir checkpoints/IndexTTS-2 --port 8000 --gpu_memory_utilization 0.8
+ExecStart=/root/miniconda3/bin/python api_server_v2.py \\
+  --model_dir checkpoints/IndexTTS-2-vLLM \\
+  --port 6006 \\
+  --is_fp16 \\
+  --gpu_memory_utilization 0.25 \\
+  --qwenemo_gpu_memory_utilization 0.10
 Restart=always
 RestartSec=10
 
@@ -208,7 +217,7 @@ sudo systemctl start tts
 
 **3. 配置端口映射**
 - AutoDL控制台 → 自定义服务 → 添加端口映射
-- 容器端口: 8000 → 公网端口: 6006
+- 容器端口: 6006 → 公网端口（启用HTTPS）
 
 ### AWS/阿里云部署
 

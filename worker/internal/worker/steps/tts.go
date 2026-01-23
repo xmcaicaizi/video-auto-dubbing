@@ -856,6 +856,21 @@ func (p *TTSProcessor) mergeSegmentAudios(ctx context.Context, taskID uuid.UUID)
 
 		audioReader.Close()
 		segmentFile.Close()
+
+		// Verify the downloaded audio file
+		if stat, err := os.Stat(segmentPath); err != nil {
+			return fmt.Errorf("failed to stat segment file %d: %w", seg.idx, err)
+		} else if stat.Size() == 0 {
+			return fmt.Errorf("segment %d audio file is empty", seg.idx)
+		} else {
+			p.deps.Logger.Debug("Downloaded segment audio",
+				zap.String("task_id", taskID.String()),
+				zap.Int("segment_idx", seg.idx),
+				zap.String("file_path", segmentPath),
+				zap.Int64("file_size", stat.Size()),
+			)
+		}
+
 		segmentFiles = append(segmentFiles, segmentPath)
 	}
 
@@ -867,14 +882,30 @@ func (p *TTSProcessor) mergeSegmentAudios(ctx context.Context, taskID uuid.UUID)
 	}
 
 	for _, segFile := range segmentFiles {
-		fmt.Fprintf(concatF, "file '%s'\\n", segFile)
+		// Use proper newline character (not escaped)
+		fmt.Fprintf(concatF, "file '%s'\n", segFile)
 	}
 	concatF.Close()
+
+	p.deps.Logger.Debug("Created concat file for ffmpeg",
+		zap.String("task_id", taskID.String()),
+		zap.String("concat_file", concatFile),
+		zap.Int("total_segments", len(segmentFiles)),
+	)
 
 	// Use ffmpeg to concatenate audio files
 	outputPath := fmt.Sprintf("/tmp/%s_dub.wav", taskID)
 	defer os.Remove(outputPath)
 
+	// Log ffmpeg command for debugging
+	p.deps.Logger.Debug("Running ffmpeg concat command",
+		zap.String("task_id", taskID.String()),
+		zap.String("concat_file", concatFile),
+		zap.String("output_path", outputPath),
+		zap.Int("segment_count", len(segmentFiles)),
+	)
+
+	var stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, p.deps.ProcessingConfig.FFmpeg.Path,
 		"-f", "concat",
 		"-safe", "0",
@@ -886,9 +917,30 @@ func (p *TTSProcessor) mergeSegmentAudios(ctx context.Context, taskID uuid.UUID)
 		"-y",
 		outputPath,
 	)
+	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("ffmpeg concat failed: %w", err)
+		// Log concat file contents for debugging
+		if concatContent, readErr := os.ReadFile(concatFile); readErr == nil {
+			p.deps.Logger.Error("FFmpeg concat failed - concat file contents",
+				zap.String("task_id", taskID.String()),
+				zap.String("concat_content", string(concatContent)),
+			)
+		}
+
+		// Log segment file info
+		for i, segFile := range segmentFiles {
+			if stat, statErr := os.Stat(segFile); statErr == nil {
+				p.deps.Logger.Error("Segment file info",
+					zap.String("task_id", taskID.String()),
+					zap.Int("segment_index", i),
+					zap.String("file_path", segFile),
+					zap.Int64("file_size", stat.Size()),
+				)
+			}
+		}
+
+		return fmt.Errorf("ffmpeg concat failed: %w, stderr: %s", err, stderr.String())
 	}
 
 	// Check if output file exists and has reasonable size

@@ -19,7 +19,7 @@ import (
 // TaskService handles task business logic.
 type TaskService struct {
 	db           *database.DB
-	storage      *storage.Service
+	storage      storage.ObjectStorage
 	orchestrator orchestrator.TaskOrchestrator
 }
 
@@ -45,7 +45,7 @@ func toNullString(s string) sql.NullString {
 }
 
 // NewTaskService creates a new task service.
-func NewTaskService(db *database.DB, storage *storage.Service, orchestrator orchestrator.TaskOrchestrator) *TaskService {
+func NewTaskService(db *database.DB, storage storage.ObjectStorage, orchestrator orchestrator.TaskOrchestrator) *TaskService {
 	return &TaskService{
 		db:           db,
 		storage:      storage,

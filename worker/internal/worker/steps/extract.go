@@ -64,7 +64,7 @@ func (p *ExtractAudioProcessor) Process(ctx context.Context, taskID uuid.UUID, m
 
 	// Extract audio using ffmpeg
 	audioPath := fmt.Sprintf("/tmp/%s_audio.wav", taskID)
-	cmd := exec.CommandContext(ctx, p.deps.Config.FFmpeg.Path,
+	cmd := exec.CommandContext(ctx, p.deps.ProcessingConfig.FFmpeg.Path,
 		"-i", videoPath,
 		"-vn",                  // No video
 		"-acodec", "pcm_s16le", // PCM 16-bit

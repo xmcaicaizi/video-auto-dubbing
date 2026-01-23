@@ -10,8 +10,8 @@ import (
 
 	"vedio/worker/internal/config"
 	"vedio/worker/internal/database"
-	"vedio/worker/internal/minio"
 	"vedio/worker/internal/queue"
+	"vedio/worker/internal/settings"
 	"vedio/worker/internal/storage"
 	"vedio/worker/internal/worker"
 
@@ -43,16 +43,27 @@ func main() {
 
 	logger.Info("Database connected successfully")
 
-	// Initialize MinIO client
-	minioClient, err := minio.New(cfg.MinIO, minio.WithExistingBucketOnly())
+	// Load settings from database and merge into config
+	settingsLoader := settings.NewLoader(db.DB)
+	dbSettings, err := settingsLoader.Load(context.Background())
 	if err != nil {
-		logger.Fatal("Failed to initialize MinIO client", zap.Error(err))
+		logger.Warn("Failed to load settings from database, using environment config only", zap.Error(err))
+	} else {
+		dbSettings.MergeIntoConfig(&cfg.BaseConfig)
+		logger.Info("Database settings loaded and merged",
+			zap.Bool("asr_configured", dbSettings.HasValidASRConfig()),
+			zap.Bool("tts_configured", dbSettings.HasValidTTSConfig()),
+			zap.Bool("translate_configured", dbSettings.HasValidTranslateConfig()),
+			zap.Bool("storage_configured", dbSettings.HasValidStorageConfig()),
+		)
 	}
 
-	logger.Info("MinIO client initialized successfully")
-
-	// Initialize storage service
-	storageService := storage.New(minioClient, storage.WithHostOverride(cfg.MinIO.PublicEndpoint))
+	// Initialize object storage (minio or oss)
+	storageService, err := storage.NewFromConfig(&cfg.BaseConfig)
+	if err != nil {
+		logger.Fatal("Failed to initialize object storage", zap.Error(err))
+	}
+	logger.Info("Object storage initialized successfully", zap.String("backend", cfg.Storage.Backend))
 
 	// Initialize RabbitMQ connection
 	queueConn, err := queue.NewConnection(cfg.RabbitMQ)

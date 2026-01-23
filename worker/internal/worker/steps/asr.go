@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"vedio/worker/internal/asr"
 	"vedio/worker/internal/models"
 
 	"github.com/google/uuid"
@@ -39,6 +40,20 @@ func (p *ASRProcessor) Process(ctx context.Context, taskID uuid.UUID, msg models
 		zap.String("language", payload.Language),
 	)
 
+	// Get effective configuration for this task
+	effectiveConfig, err := p.deps.ConfigManager.GetEffectiveConfig(ctx, taskID)
+	if err != nil {
+		return fmt.Errorf("failed to get effective config: %w", err)
+	}
+
+	// Validate ASR configuration
+	if err := effectiveConfig.ValidateForASR(); err != nil {
+		return fmt.Errorf("ASR configuration validation failed: %w", err)
+	}
+
+	// Create ASR client with effective configuration
+	asrClient := asr.NewClient(effectiveConfig.External.VolcengineASR, p.deps.Logger)
+
 	// Generate presigned URL for audio (ASR service needs to download it)
 	audioURL, err := p.deps.Storage.PresignedGetURL(ctx, payload.AudioKey, 1*time.Hour)
 	if err != nil {
@@ -50,8 +65,8 @@ func (p *ASRProcessor) Process(ctx context.Context, taskID uuid.UUID, msg models
 		zap.String("audio_url", audioURL),
 	)
 
-	// Call ASR service (Moonshine)
-	asrResult, err := p.deps.ASRClient.Recognize(ctx, audioURL, payload.Language)
+	// Call ASR service (Volcengine)
+	asrResult, err := asrClient.Recognize(ctx, audioURL, payload.Language)
 	if err != nil {
 		return fmt.Errorf("ASR service call failed: %w", err)
 	}
@@ -69,20 +84,22 @@ func (p *ASRProcessor) Process(ctx context.Context, taskID uuid.UUID, msg models
 		return fmt.Errorf("failed to save ASR result: %w", err)
 	}
 
-	// Save segments to database
+	// Save segments to database (including speaker_id, emotion, gender)
 	for _, seg := range asrResult.Segments {
 		query := `
-			INSERT INTO segments (task_id, idx, start_ms, end_ms, duration_ms, src_text, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			INSERT INTO segments (task_id, idx, start_ms, end_ms, duration_ms, src_text,
+			                      speaker_id, emotion, gender, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 			ON CONFLICT (task_id, idx) DO UPDATE
 			SET start_ms = EXCLUDED.start_ms, end_ms = EXCLUDED.end_ms,
 			    duration_ms = EXCLUDED.duration_ms, src_text = EXCLUDED.src_text,
-			    updated_at = EXCLUDED.updated_at
+			    speaker_id = EXCLUDED.speaker_id, emotion = EXCLUDED.emotion,
+			    gender = EXCLUDED.gender, updated_at = EXCLUDED.updated_at
 		`
 		now := time.Now()
 		_, err := p.deps.DB.ExecContext(ctx, query,
 			taskID, seg.Idx, seg.StartMs, seg.EndMs, seg.EndMs-seg.StartMs,
-			seg.Text, now, now,
+			seg.Text, seg.SpeakerID, seg.Emotion, seg.Gender, now, now,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to save segment: %w", err)

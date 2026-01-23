@@ -15,7 +15,7 @@ import (
 )
 
 // New creates a new router with all routes configured.
-func New(db *database.DB, storage *storage.Service, publisher *queue.Publisher, logger *zap.Logger) *gin.Engine {
+func New(db *database.DB, store storage.ObjectStorage, publisher *queue.Publisher, logger *zap.Logger) *gin.Engine {
 	// Set Gin mode
 	gin.SetMode(gin.ReleaseMode)
 
@@ -37,8 +37,12 @@ func New(db *database.DB, storage *storage.Service, publisher *queue.Publisher, 
 		// Initialize services
 		taskRepo := orchestrator.NewDBTaskRepository(db)
 		taskOrchestrator := orchestrator.NewTaskOrchestrator(publisher, taskRepo)
-		taskService := service.NewTaskService(db, storage, taskOrchestrator)
+		taskService := service.NewTaskService(db, store, taskOrchestrator)
 		taskHandler := handlers.NewTaskHandler(taskService, logger)
+
+		// Settings service
+		settingsService := service.NewSettingsService(db)
+		settingsHandler := handlers.NewSettingsHandler(settingsService, logger)
 
 		// Task routes
 		tasks := v1.Group("/tasks")
@@ -49,6 +53,14 @@ func New(db *database.DB, storage *storage.Service, publisher *queue.Publisher, 
 			tasks.GET("/:task_id/result", taskHandler.GetTaskResult)
 			tasks.GET("/:task_id/download", taskHandler.GetTaskDownload)
 			tasks.DELETE("/:task_id", taskHandler.DeleteTask)
+		}
+
+		// Settings routes
+		settings := v1.Group("/settings")
+		{
+			settings.GET("", settingsHandler.GetSettings)
+			settings.PUT("", settingsHandler.UpdateSettings)
+			settings.POST("/test", settingsHandler.TestConnection)
 		}
 	}
 

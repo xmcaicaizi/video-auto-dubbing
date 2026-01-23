@@ -6,14 +6,11 @@ import (
 	"fmt"
 	"time"
 
-	"vedio/worker/internal/asr"
 	"vedio/worker/internal/config"
 	"vedio/worker/internal/database"
 	"vedio/worker/internal/models"
 	"vedio/worker/internal/queue"
 	"vedio/worker/internal/storage"
-	"vedio/worker/internal/translate"
-	"vedio/worker/internal/tts"
 	"vedio/worker/internal/worker/steps"
 
 	"github.com/google/uuid"
@@ -35,32 +32,26 @@ type Publisher interface {
 
 // Worker handles task processing.
 type Worker struct {
-	db          *database.DB
-	storage     *storage.Service
-	publisher   Publisher
-	config      *config.Config
-	logger      *zap.Logger
-	asrClient   *asr.Client
-	transClient *translate.Client
-	ttsClient   *tts.Client
-	registry    *ProcessorRegistry
+	db            *database.DB
+	storage       storage.ObjectStorage
+	publisher     Publisher
+	configManager *config.Manager
+	config        *config.Config
+	logger        *zap.Logger
+	registry      *ProcessorRegistry
 }
 
 // New creates a new worker.
-func New(db *database.DB, storage *storage.Service, publisher Publisher, cfg *config.Config, logger *zap.Logger) *Worker {
-	asrClient := asr.NewClient(cfg.External.ASR, logger)
-	transClient := translate.NewClient(cfg.External.GLM, logger)
-	ttsClient := tts.NewClient(cfg.TTS, logger)
+func New(db *database.DB, storage storage.ObjectStorage, publisher Publisher, cfg *config.Config, logger *zap.Logger) *Worker {
+	configManager := config.NewManager(cfg, db.DB)
 
 	w := &Worker{
-		db:          db,
-		storage:     storage,
-		publisher:   publisher,
-		config:      cfg,
-		logger:      logger,
-		asrClient:   asrClient,
-		transClient: transClient,
-		ttsClient:   ttsClient,
+		db:            db,
+		storage:       storage,
+		publisher:     publisher,
+		configManager: configManager,
+		config:        cfg,
+		logger:        logger,
 	}
 
 	w.registry = NewProcessorRegistry()
@@ -79,15 +70,17 @@ func (w *Worker) registerDefaultProcessors() {
 }
 
 func (w *Worker) buildDeps() steps.Deps {
-	return steps.Deps{
-		DB:        w.db,
-		Storage:   w.storage,
-		Publisher: w.publisher,
-		Config:    w.config,
-		Logger:    w.logger,
+	// Get the base config from config manager for processing settings
+	baseConfig, _ := w.configManager.GetEffectiveConfig(context.Background(), uuid.Nil)
+	processingConfig := baseConfig.Config
 
-		ASRClient: w.asrClient,
-		TTSClient: w.ttsClient,
+	return steps.Deps{
+		DB:               w.db,
+		Storage:          w.storage,
+		Publisher:        w.publisher,
+		ConfigManager:    w.configManager,
+		ProcessingConfig: &processingConfig,
+		Logger:           w.logger,
 	}
 }
 

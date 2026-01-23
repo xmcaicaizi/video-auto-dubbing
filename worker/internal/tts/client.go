@@ -10,30 +10,28 @@ import (
 	"strings"
 	"time"
 
-	"vedio/worker/internal/config"
+	"vedio/shared/config"
 
 	"go.uber.org/zap"
 )
 
-// Client handles TTS service API calls.
-type Client struct {
-	baseURL string
-	client  *http.Client
-	logger  *zap.Logger
+// Client defines the interface for TTS services.
+type Client interface {
+	Synthesize(ctx context.Context, req SynthesisRequest) (io.ReadCloser, error)
 }
 
 // SynthesisRequest represents a TTS synthesis request.
 type SynthesisRequest struct {
-	Text             string                 `json:"text"`
-	SpeakerID        string                 `json:"speaker_id"`
-	PromptAudioURL   string                 `json:"prompt_audio_url,omitempty"`
-	TargetDurationMs int                    `json:"target_duration_ms"`
-	Language         string                 `json:"language"`
-	ProsodyControl   map[string]interface{} `json:"prosody_control,omitempty"`
-	OutputFormat     string                 `json:"output_format"`
-	SampleRate       int                    `json:"sample_rate"`
-	TTSBackend        string `json:"tts_backend,omitempty"`
-	IndexTTSGradioURL string `json:"indextts_gradio_url,omitempty"`
+	Text              string                 `json:"text"`
+	SpeakerID         string                 `json:"speaker_id"`
+	PromptAudioURL    string                 `json:"prompt_audio_url,omitempty"`
+	TargetDurationMs  int                    `json:"target_duration_ms"`
+	Language          string                 `json:"language"`
+	ProsodyControl    map[string]interface{} `json:"prosody_control,omitempty"`
+	OutputFormat      string                 `json:"output_format"`
+	SampleRate        int                    `json:"sample_rate"`
+	TTSBackend        string                 `json:"tts_backend,omitempty"`
+	IndexTTSGradioURL string                 `json:"indextts_gradio_url,omitempty"`
 }
 
 // SynthesisResponse represents a TTS synthesis response.
@@ -45,19 +43,80 @@ type SynthesisResponse struct {
 	FileSize   int    `json:"file_size"`
 }
 
-// NewClient creates a new TTS client.
-func NewClient(cfg config.TTSConfig, logger *zap.Logger) *Client {
-	return &Client{
+// NewClient creates the appropriate TTS client based on configuration.
+// It selects between:
+// - GradioClient: for Gradio-based IndexTTS services (explicit backend="gradio")
+// - VLLMClient: for index-tts-vllm remote service (default, supports /tts_url)
+// - LegacyClient: for backward compatibility with old tts_service
+func NewClient(cfg config.TTSConfig, logger *zap.Logger) Client {
+	// Use legacy client for backward compatibility
+	if cfg.Backend == "legacy" || cfg.Backend == "local" {
+		return NewLegacyClient(cfg, logger)
+	}
+
+	// Explicit Gradio backend selection
+	if cfg.Backend == "gradio" {
+		logger.Info("Using GradioClient (explicit backend=gradio)",
+			zap.String("url", cfg.URL))
+		return NewGradioClient(cfg, logger)
+	}
+
+	// Auto-detect Gradio interface by checking URL patterns (only for specific indicators)
+	if cfg.Backend == "" && isGradioService(cfg.URL) {
+		logger.Info("Detected Gradio TTS service, using GradioClient",
+			zap.String("url", cfg.URL))
+		return NewGradioClient(cfg, logger)
+	}
+
+	// Default to VLLM client for IndexTTS v2 FastAPI services
+	logger.Info("Using VLLMClient for IndexTTS API",
+		zap.String("url", cfg.URL),
+		zap.String("backend", cfg.Backend))
+	return NewVLLMClient(cfg, logger)
+}
+
+// isGradioService detects if the service URL indicates a Gradio interface.
+// NOTE: Only use for auto-detection when backend is not explicitly set.
+func isGradioService(url string) bool {
+	// Check for explicit Gradio URL patterns only
+	// Removed .seetacloud.com as it can host both Gradio and FastAPI services
+	gradioIndicators := []string{
+		".gradio.live",    // Gradio sharing URLs
+		".gradio.app",     // Gradio official app domain
+		"/gradio/",        // URL path contains gradio
+		":7860",           // Default Gradio port
+	}
+
+	for _, indicator := range gradioIndicators {
+		if strings.Contains(url, indicator) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// LegacyClient handles TTS API calls to the original tts_service.
+// Kept for backward compatibility.
+type LegacyClient struct {
+	baseURL string
+	client  *http.Client
+	logger  *zap.Logger
+}
+
+// NewLegacyClient creates a new legacy TTS client.
+func NewLegacyClient(cfg config.TTSConfig, logger *zap.Logger) *LegacyClient {
+	return &LegacyClient{
 		baseURL: cfg.URL,
 		client: &http.Client{
-			Timeout: 600 * time.Second, // TTS can take longer for IndexTTS2
+			Timeout: 600 * time.Second,
 		},
 		logger: logger,
 	}
 }
 
-// Synthesize performs TTS synthesis.
-func (c *Client) Synthesize(ctx context.Context, req SynthesisRequest) (io.ReadCloser, error) {
+// Synthesize performs TTS synthesis using the legacy API.
+func (c *LegacyClient) Synthesize(ctx context.Context, req SynthesisRequest) (io.ReadCloser, error) {
 	// Create request body
 	bodyBytes, err := json.Marshal(req)
 	if err != nil {
@@ -137,6 +196,6 @@ func (c *Client) Synthesize(ctx context.Context, req SynthesisRequest) (io.ReadC
 		return audioResp.Body, nil
 	}
 
-	// If no URL, assume response body contains audio (for future direct audio response)
+	// If no URL, assume response body contains audio
 	return resp.Body, nil
 }

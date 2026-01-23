@@ -14,6 +14,8 @@ func Migrate(db *sql.DB) error {
 		alterTasksTableAddTTSConfig,
 		createTaskStepsTable,
 		createSegmentsTable,
+		alterSegmentsTableAddSpeakerInfo,
+		createSettingsTable,
 	}
 
 	for _, migration := range migrations {
@@ -114,5 +116,43 @@ CREATE TABLE IF NOT EXISTS segments (
 
 CREATE INDEX IF NOT EXISTS idx_segments_task_id ON segments(task_id);
 CREATE INDEX IF NOT EXISTS idx_segments_task_id_idx ON segments(task_id, idx);
+`
+
+const alterSegmentsTableAddSpeakerInfo = `
+-- Add speaker identification fields from Volcengine ASR
+ALTER TABLE segments
+    ADD COLUMN IF NOT EXISTS speaker_id VARCHAR(32),
+    ADD COLUMN IF NOT EXISTS emotion VARCHAR(32),
+    ADD COLUMN IF NOT EXISTS gender VARCHAR(16);
+
+COMMENT ON COLUMN segments.speaker_id IS '说话人标识 (火山引擎ASR返回)';
+COMMENT ON COLUMN segments.emotion IS '情绪标签: angry, happy, neutral, sad, surprise';
+COMMENT ON COLUMN segments.gender IS '性别标签: male, female';
+
+-- Index for speaker-based queries (useful for multi-speaker TTS)
+CREATE INDEX IF NOT EXISTS idx_segments_speaker_id ON segments(task_id, speaker_id);
+`
+
+const createSettingsTable = `
+-- Global settings table for ASR, TTS, and translation configuration
+CREATE TABLE IF NOT EXISTS settings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    category VARCHAR(50) NOT NULL,
+    key VARCHAR(100) NOT NULL,
+    value TEXT,
+    is_encrypted BOOLEAN DEFAULT FALSE,
+    description TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(category, key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_settings_category ON settings(category);
+
+COMMENT ON TABLE settings IS '全局设置表，存储 ASR、TTS、翻译等服务配置';
+COMMENT ON COLUMN settings.category IS '配置分类: asr, tts, translate';
+COMMENT ON COLUMN settings.key IS '配置键名';
+COMMENT ON COLUMN settings.value IS '配置值，敏感信息可加密存储';
+COMMENT ON COLUMN settings.is_encrypted IS '是否加密存储';
 `
 

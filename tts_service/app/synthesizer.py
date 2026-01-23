@@ -80,7 +80,12 @@ class TTSSynthesizer:
         with self._index_tts_lock:
             if self._index_tts is not None:
                 return
-            from indextts.infer_v2 import IndexTTS2
+            # Use external index-tts-vllm package or HTTP API
+            try:
+                from indextts_vllm import IndexTTSVLLM as IndexTTS2
+            except ImportError:
+                # Fallback to HTTP API mode
+                raise ModelNotLoadedError("Neither indextts nor index-tts-vllm is available")
 
             self._index_tts = IndexTTS2(
                 cfg_path=settings.indextts_cfg_path,

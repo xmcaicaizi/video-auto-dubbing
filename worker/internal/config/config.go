@@ -13,7 +13,7 @@ type MinIOConfig = sharedconfig.MinIOConfig
 type RabbitMQConfig = sharedconfig.RabbitMQConfig
 type TTSConfig = sharedconfig.TTSConfig
 type ExternalConfig = sharedconfig.ExternalConfig
-type ASRConfig = sharedconfig.ASRConfig
+type VolcengineASRConfig = sharedconfig.VolcengineASRConfig
 type GLMConfig = sharedconfig.GLMConfig
 
 // Config holds all configuration for the worker.
@@ -60,12 +60,10 @@ type StepTimeouts struct {
 }
 
 // Load loads configuration from environment variables.
+// Note: ASR/TTS/GLM settings can also be loaded from database at runtime.
 func Load() (*Config, error) {
 	loader := sharedconfig.NewLoader(
-		sharedconfig.WithDefaults(map[string]interface{}{
-			"ASR_SERVICE_URL": "http://localhost:8002",
-		}),
-		sharedconfig.WithValidator(sharedconfig.RequireASRURL),
+		// No longer require Volcengine ASR at startup - can be loaded from DB
 		sharedconfig.WithMinIOPublicFallback(),
 	)
 
@@ -117,4 +115,32 @@ func Load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// ValidateVolcengineASR validates that Volcengine ASR credentials are configured.
+// This is used at runtime when ASR is needed, not at startup.
+func ValidateVolcengineASR(cfg *sharedconfig.BaseConfig) error {
+	if cfg.External.VolcengineASR.AppKey == "" {
+		return fmt.Errorf("VOLCENGINE_ASR_APP_KEY is required (configure via settings or environment)")
+	}
+	if cfg.External.VolcengineASR.AccessKey == "" {
+		return fmt.Errorf("VOLCENGINE_ASR_ACCESS_KEY is required (configure via settings or environment)")
+	}
+	return nil
+}
+
+// ValidateTTSConfig validates that TTS service is configured.
+func ValidateTTSConfig(cfg *sharedconfig.BaseConfig) error {
+	if cfg.TTS.URL == "" {
+		return fmt.Errorf("TTS_SERVICE_URL is required (configure via settings or environment)")
+	}
+	return nil
+}
+
+// ValidateGLMConfig validates that GLM API is configured.
+func ValidateGLMConfig(cfg *sharedconfig.BaseConfig) error {
+	if cfg.External.GLM.APIKey == "" {
+		return fmt.Errorf("GLM_API_KEY is required (configure via settings or environment)")
+	}
+	return nil
 }

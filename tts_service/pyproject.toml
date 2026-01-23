@@ -1,84 +1,52 @@
 [project]
-name = "tts-service"
-version = "0.1.0"
-description = "IndexTTS2 based TTS service for video dubbing (local inference)"
+name = "tts-service-lean"
+version = "0.2.0"
+description = "Lean TTS service for remote deployment (using index-tts-vllm)"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
     "pydantic>=2.5.0",
     "pydantic-settings>=2.1.0",
-    "accelerate==1.8.1",
-    "cn2an==0.5.22",
-    "cython==3.0.7",
-    "descript-audiotools==0.7.2",
     "numpy>=1.24.0",
-    "modelscope>=1.9.0",
-    "addict>=2.4.0",
-    "datasets>=2.14.0,<3",
-    "einops>=0.8.1",
-    "ffmpeg-python==0.2.0",
-    "g2p-en==2.1.0",
-    "huggingface-hub>=0.20.0",
-    "jieba==0.42.1",
-    "json5==0.10.0",
-    "keras==2.9.0",
-    "librosa>=0.10.0",
-    "matplotlib==3.8.2",
-    "munch==4.0.0",
-    "numba==0.58.1",
-    "omegaconf>=2.3.0",
-    "opencv-python==4.9.0.80",
-    "pandas==2.3.2",
-    "torch>=2.1.0",
-    "torchaudio>=2.1.0",
-    "torchcodec>=0.1.0",
-    "pillow>=10.0.0",
-    "safetensors==0.5.2",
-    "sentencepiece>=0.2.1",
-    "simplejson>=3.19.0",
-    "sortedcontainers>=2.4.0",
     "soundfile>=0.12.0",
-    "scipy>=1.11.0",
-    "tensorboard==2.9.1",
-    "textstat>=0.7.10",
-    "tokenizers==0.21.0",
-    "tqdm>=4.67.1",
-    "transformers==4.52.1",
-    "wetext>=0.0.9; sys_platform != 'linux'",
-    "WeTextProcessing; sys_platform == 'linux'",
-    "gradio_client>=1.0.0",
-    "python-multipart>=0.0.6",
+    "requests>=2.31.0",
+    "httpx>=0.25.0",
+    # External IndexTTS implementation
+    "torch>=2.0.0",
+    "transformers>=4.35.0",
+    # Use external index-tts-vllm when available
+    # "index-tts-vllm @ git+https://github.com/Ksuriuri/index-tts-vllm.git",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
-    "black>=23.11.0",
-    "ruff>=0.1.6",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.6.0",
 ]
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["app"]
-
-[tool.uv]
-dev-dependencies = [
-    "pytest>=7.4.0",
-    "pytest-asyncio>=0.21.0",
-    "black>=23.11.0",
-    "ruff>=0.1.6",
-]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [tool.black]
-line-length = 100
-target-version = ['py311']
+line-length = 120
+target-version = ["py311"]
 
 [tool.ruff]
-line-length = 100
+select = ["E", "F", "W", "I", "N", "UP"]
+ignore = ["E501"]  # Line too long (handled by black)
+line-length = 120
 target-version = "py311"
 
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true

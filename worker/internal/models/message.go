@@ -64,8 +64,11 @@ type ASRResult struct {
 
 // ASRSegment represents a single ASR segment.
 type ASRSegment struct {
-	Idx     int    `json:"idx"`
-	StartMs int    `json:"start_ms"`
-	EndMs   int    `json:"end_ms"`
-	Text    string `json:"text"`
+	Idx       int    `json:"idx"`
+	StartMs   int    `json:"start_ms"`
+	EndMs     int    `json:"end_ms"`
+	Text      string `json:"text"`
+	SpeakerID string `json:"speaker_id,omitempty"` // 说话人标识
+	Emotion   string `json:"emotion,omitempty"`    // 情绪: angry, happy, neutral, sad, surprise
+	Gender    string `json:"gender,omitempty"`     // 性别: male, female
 }

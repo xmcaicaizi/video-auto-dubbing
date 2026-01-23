@@ -12,7 +12,6 @@ import (
 
 	"vedio/api/internal/config"
 	"vedio/api/internal/database"
-	"vedio/api/internal/minio"
 	"vedio/api/internal/queue"
 	"vedio/api/internal/router"
 	"vedio/api/internal/storage"
@@ -48,16 +47,12 @@ func main() {
 		logger.Fatal("Failed to migrate database schema", zap.Error(err))
 	}
 
-	// Initialize MinIO client
-	minioClient, err := minio.New(cfg.MinIO)
+	// Initialize object storage (minio or oss)
+	storageService, err := storage.NewFromConfig(&cfg.BaseConfig)
 	if err != nil {
-		logger.Fatal("Failed to initialize MinIO client", zap.Error(err))
+		logger.Fatal("Failed to initialize object storage", zap.Error(err))
 	}
-
-	logger.Info("MinIO client initialized successfully")
-
-	// Initialize storage service
-	storageService := storage.New(minioClient)
+	logger.Info("Object storage initialized successfully", zap.String("backend", cfg.Storage.Backend))
 
 	// Initialize RabbitMQ connection
 	queueConn, err := queue.NewConnection(cfg.RabbitMQ)

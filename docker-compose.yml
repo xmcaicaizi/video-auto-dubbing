@@ -69,6 +69,7 @@ services:
       dockerfile: api/Dockerfile
     container_name: video-dubbing-api
     environment:
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-minio}
       # 数据库配置
       DB_HOST: db
       DB_PORT: 5432
@@ -77,11 +78,19 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD:-dubbing123}
       # MinIO 配置
       MINIO_ENDPOINT: minio:9000
-      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-localhost:9000}
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-}
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin123}
-      MINIO_USE_SSL: "false"
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
       MINIO_BUCKET: ${MINIO_BUCKET:-videos}
+      # OSS 配置
+      OSS_ENDPOINT: ${OSS_ENDPOINT:-}
+      OSS_BUCKET: ${OSS_BUCKET:-}
+      OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID:-}
+      OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET:-}
+      OSS_PUBLIC_DOMAIN: ${OSS_PUBLIC_DOMAIN:-}
+      OSS_PREFIX: ${OSS_PREFIX:-}
+      OSS_USE_SSL: ${OSS_USE_SSL:-true}
       # RabbitMQ 配置
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-rabbitmq}:${RABBITMQ_PASSWORD:-rabbitmq123}@rabbitmq:5672/
       # 外部 API 配置
@@ -89,9 +98,7 @@ services:
       GLM_API_URL: ${GLM_API_URL:-https://open.bigmodel.cn/api/paas/v4/chat/completions}
       GLM_MODEL: ${GLM_MODEL:-glm-4.5}
       # TTS 服务配置
-      TTS_SERVICE_URL: ${TTS_SERVICE_URL:-http://tts_service:8000}
-      # ASR 服务配置
-      ASR_SERVICE_URL: http://asr_service:8002
+      TTS_SERVICE_URL: ${TTS_SERVICE_URL}
       # 服务配置
       API_PORT: 8080
       API_HOST: 0.0.0.0
@@ -117,6 +124,7 @@ services:
       dockerfile: worker/Dockerfile
     container_name: video-dubbing-worker
     environment:
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-minio}
       # 数据库配置
       DB_HOST: db
       DB_PORT: 5432
@@ -125,32 +133,48 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD:-dubbing123}
       # MinIO 配置
       MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-}
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin123}
-      MINIO_USE_SSL: "false"
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
       MINIO_BUCKET: ${MINIO_BUCKET:-videos}
+      # OSS 配置
+      OSS_ENDPOINT: ${OSS_ENDPOINT:-}
+      OSS_BUCKET: ${OSS_BUCKET:-}
+      OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID:-}
+      OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET:-}
+      OSS_PUBLIC_DOMAIN: ${OSS_PUBLIC_DOMAIN:-}
+      OSS_PREFIX: ${OSS_PREFIX:-}
+      OSS_USE_SSL: ${OSS_USE_SSL:-true}
       # RabbitMQ 配置
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-rabbitmq}:${RABBITMQ_PASSWORD:-rabbitmq123}@rabbitmq:5672/
       # 外部 API 配置
       GLM_API_KEY: ${GLM_API_KEY}
       GLM_API_URL: ${GLM_API_URL:-https://open.bigmodel.cn/api/paas/v4/chat/completions}
       GLM_MODEL: ${GLM_MODEL:-glm-4.5}
-      # ASR 服务配置
-      ASR_SERVICE_URL: http://asr_service:8002
-      # TTS 服务配置
-      TTS_SERVICE_URL: ${TTS_SERVICE_URL:-http://tts_service:8000}
+      # TTS 服务配置 (远程 index-tts-vllm)
+      TTS_SERVICE_URL: ${TTS_SERVICE_URL}
+      TTS_BACKEND: ${TTS_BACKEND:-vllm}
+      TTS_API_KEY: ${TTS_API_KEY:-}
       # FFmpeg 配置
       FFMPEG_PATH: /usr/bin/ffmpeg
+      # 火山引擎 ASR 配置
+      VOLCENGINE_ASR_APP_KEY: ${VOLCENGINE_ASR_APP_KEY}
+      VOLCENGINE_ASR_ACCESS_KEY: ${VOLCENGINE_ASR_ACCESS_KEY}
+      VOLCENGINE_ASR_RESOURCE_ID: ${VOLCENGINE_ASR_RESOURCE_ID:-volc.bigasr.auc}
+      VOLCENGINE_ASR_ENABLE_SPEAKER_INFO: ${VOLCENGINE_ASR_ENABLE_SPEAKER_INFO:-true}
+      VOLCENGINE_ASR_ENABLE_EMOTION: ${VOLCENGINE_ASR_ENABLE_EMOTION:-true}
+      VOLCENGINE_ASR_ENABLE_GENDER: ${VOLCENGINE_ASR_ENABLE_GENDER:-true}
+      VOLCENGINE_ASR_ENABLE_PUNC: ${VOLCENGINE_ASR_ENABLE_PUNC:-true}
+      VOLCENGINE_ASR_ENABLE_ITN: ${VOLCENGINE_ASR_ENABLE_ITN:-true}
+      VOLCENGINE_ASR_POLL_INTERVAL_SECONDS: ${VOLCENGINE_ASR_POLL_INTERVAL_SECONDS:-2}
+      VOLCENGINE_ASR_POLL_TIMEOUT_SECONDS: ${VOLCENGINE_ASR_POLL_TIMEOUT_SECONDS:-900}
     depends_on:
       db:
         condition: service_healthy
       minio:
         condition: service_healthy
       rabbitmq:
-        condition: service_healthy
-      asr_service:
-        condition: service_healthy
-      tts_service:
         condition: service_healthy
     volumes:
       - worker_logs:/app/logs
@@ -159,92 +183,6 @@ services:
     restart: unless-stopped
     # 注意：可以通过 scale 命令扩展多个 worker 实例
     # docker compose up --scale worker=3
-
-  # ASR 服务（Python + Moonshine）
-  asr_service:
-    build:
-      context: ./asr_service
-      dockerfile: Dockerfile
-    container_name: video-dubbing-asr
-    environment:
-      ASR_HOST: 0.0.0.0
-      ASR_PORT: 8002
-      ASR_MODEL_ID: ${ASR_MODEL_ID:-moonshine/tiny}
-      ASR_DEVICE: ${ASR_DEVICE:-cpu}
-      ASR_COMPUTE_TYPE: ${ASR_COMPUTE_TYPE:-float16}
-      ASR_BACKEND: ${ASR_BACKEND:-moonshine_onnx}
-      TARGET_SAMPLE_RATE: 16000
-      AUDIO_TEMP_DIR: /app/temp/audio
-      HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
-      HF_HOME: ${ASR_HF_HOME:-/app/models/hf_home}
-      HF_HUB_CACHE: ${ASR_HF_HUB_CACHE:-/app/models/hf_cache}
-    ports:
-      - "${ASR_PORT:-8002}:8002"
-    volumes:
-      - asr_models:/app/models
-      - asr_temp:/app/temp
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health').read()"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-    networks:
-      - dubbing-network
-    restart: unless-stopped
-
-  # TTS 服务（Python）
-  tts_service:
-    build:
-      context: ./tts_service
-      dockerfile: Dockerfile
-    container_name: video-dubbing-tts
-    runtime: nvidia
-    environment:
-      TTS_HOST: 0.0.0.0
-      TTS_PORT: 8000
-      TTS_WORKERS: ${TTS_WORKERS:-1}
-      # IndexTTS2 local inference configuration
-      TTS_BACKEND: ${TTS_BACKEND:-index_tts2}
-      INDEXTTS_MODEL_DIR: ${INDEXTTS_MODEL_DIR:-/app/models/IndexTTS-2}
-      INDEXTTS_CFG_PATH: ${INDEXTTS_CFG_PATH:-/app/models/IndexTTS-2/config.yaml}
-      INDEXTTS_PROMPT_AUDIO: ${INDEXTTS_PROMPT_AUDIO:-/app/assets/voice_01.wav}
-      INDEXTTS_DEVICE: ${INDEXTTS_DEVICE:-auto}
-      INDEXTTS_USE_FP16: ${INDEXTTS_USE_FP16:-true}
-      INDEXTTS_USE_TORCH_COMPILE: ${INDEXTTS_USE_TORCH_COMPILE:-false}
-      INDEXTTS_USE_CUDA_KERNEL: ${INDEXTTS_USE_CUDA_KERNEL:-false}
-      HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
-      HF_HUB_CACHE: ${HF_HUB_CACHE:-/app/models/IndexTTS-2/hf_cache}
-      STRICT_DURATION: ${STRICT_DURATION:-false}
-      MAX_CONCURRENT_REQUESTS: ${MAX_CONCURRENT_REQUESTS:-10}
-      MAX_RETRIES: ${MAX_RETRIES:-3}
-      RETRY_DELAY_SECONDS: ${RETRY_DELAY_SECONDS:-1.0}
-      # Audio settings
-      DEFAULT_SAMPLE_RATE: 22050
-      DEFAULT_FORMAT: wav
-      AUDIO_TEMP_DIR: /app/temp/audio
-      AUDIO_TEMP_RETENTION_HOURS: 24
-      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
-      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
-    ports:
-      - "${TTS_PORT:-8001}:8000"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    volumes:
-      - tts_models:/app/models
-      - tts_temp:/app/temp
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-    networks:
-      - dubbing-network
-    restart: unless-stopped
 
   # NGINX 网关
   gateway:
@@ -259,7 +197,6 @@ services:
       - ./web/dist:/usr/share/nginx/html:ro
     depends_on:
       - api
-      - tts_service
     networks:
       - dubbing-network
     restart: unless-stopped
@@ -275,16 +212,7 @@ volumes:
     driver: local
   worker_logs:
     driver: local
-  tts_models:
-    driver: local
-  tts_temp:
-    driver: local
-  asr_models:
-    driver: local
-  asr_temp:
-    driver: local
 
 networks:
   dubbing-network:
     driver: bridge
-

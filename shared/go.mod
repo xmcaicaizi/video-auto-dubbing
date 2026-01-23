@@ -3,6 +3,7 @@ module vedio/shared
 go 1.21
 
 require (
+	github.com/aliyun/aliyun-oss-go-sdk v3.0.2+incompatible
 	github.com/minio/minio-go/v7 v7.0.66
 	github.com/rabbitmq/amqp091-go v1.9.0
 	github.com/spf13/viper v1.18.2

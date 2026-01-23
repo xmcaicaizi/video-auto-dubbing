@@ -254,8 +254,8 @@ func (p *TTSProcessor) resolveBatchSize(payload models.TTSPayload) int {
 	if payload.BatchSize > 0 {
 		return payload.BatchSize
 	}
-	if p.deps.Config.Processing.TTS.BatchSize > 0 {
-		return p.deps.Config.Processing.TTS.BatchSize
+	if p.deps.ProcessingConfig.Processing.TTS.BatchSize > 0 {
+		return p.deps.ProcessingConfig.Processing.TTS.BatchSize
 	}
 	return 20
 }
@@ -264,8 +264,8 @@ func (p *TTSProcessor) resolveConcurrency(payload models.TTSPayload) int {
 	if payload.MaxConcurrency > 0 {
 		return payload.MaxConcurrency
 	}
-	if p.deps.Config.Processing.TTS.MaxConcurrency > 0 {
-		return p.deps.Config.Processing.TTS.MaxConcurrency
+	if p.deps.ProcessingConfig.Processing.TTS.MaxConcurrency > 0 {
+		return p.deps.ProcessingConfig.Processing.TTS.MaxConcurrency
 	}
 	return 4
 }
@@ -274,8 +274,8 @@ func (p *TTSProcessor) resolveMaxRetries(payload models.TTSPayload) int {
 	if payload.MaxRetries > 0 {
 		return payload.MaxRetries
 	}
-	if p.deps.Config.Processing.TTS.MaxRetries > 0 {
-		return p.deps.Config.Processing.TTS.MaxRetries
+	if p.deps.ProcessingConfig.Processing.TTS.MaxRetries > 0 {
+		return p.deps.ProcessingConfig.Processing.TTS.MaxRetries
 	}
 	return 3
 }
@@ -284,8 +284,8 @@ func (p *TTSProcessor) resolveRetryDelay(payload models.TTSPayload) time.Duratio
 	if payload.RetryDelaySec > 0 {
 		return time.Duration(payload.RetryDelaySec * float64(time.Second))
 	}
-	if p.deps.Config.Processing.TTS.RetryDelay > 0 {
-		return p.deps.Config.Processing.TTS.RetryDelay
+	if p.deps.ProcessingConfig.Processing.TTS.RetryDelay > 0 {
+		return p.deps.ProcessingConfig.Processing.TTS.RetryDelay
 	}
 	return 2 * time.Second
 }
@@ -330,7 +330,21 @@ func (p *TTSProcessor) processSingleSegment(ctx context.Context, taskID uuid.UUI
 		IndexTTSGradioURL: ttsCfg.gradioURL,
 	}
 
-	audioReader, err := p.deps.TTSClient.Synthesize(ctx, ttsReq)
+	// Get effective configuration and create TTS client
+	effectiveConfig, err := p.deps.ConfigManager.GetEffectiveConfig(ctx, taskID)
+	if err != nil {
+		return fmt.Errorf("failed to get effective config: %w", err)
+	}
+
+	// Validate TTS configuration
+	if err := effectiveConfig.ValidateForTTS(); err != nil {
+		return fmt.Errorf("TTS configuration validation failed: %w", err)
+	}
+
+	// Create TTS client with effective configuration
+	ttsClient := tts.NewClient(effectiveConfig.TTS, p.deps.Logger)
+
+	audioReader, err := ttsClient.Synthesize(ctx, ttsReq)
 	if err != nil {
 		return fmt.Errorf("TTS API call failed: %w", err)
 	}
@@ -624,7 +638,7 @@ func (p *TTSProcessor) selectPromptSegment(ctx context.Context, taskID uuid.UUID
 func (p *TTSProcessor) cutPrompt(ctx context.Context, sourcePath, promptPath string, startMs, durationMs int) error {
 	startSec := fmt.Sprintf("%.3f", float64(startMs)/1000.0)
 	durSec := fmt.Sprintf("%.3f", float64(durationMs)/1000.0)
-	cmd := exec.CommandContext(ctx, p.deps.Config.FFmpeg.Path,
+	cmd := exec.CommandContext(ctx, p.deps.ProcessingConfig.FFmpeg.Path,
 		"-ss", startSec,
 		"-t", durSec,
 		"-i", sourcePath,
@@ -861,7 +875,7 @@ func (p *TTSProcessor) mergeSegmentAudios(ctx context.Context, taskID uuid.UUID)
 	outputPath := fmt.Sprintf("/tmp/%s_dub.wav", taskID)
 	defer os.Remove(outputPath)
 
-	cmd := exec.CommandContext(ctx, p.deps.Config.FFmpeg.Path,
+	cmd := exec.CommandContext(ctx, p.deps.ProcessingConfig.FFmpeg.Path,
 		"-f", "concat",
 		"-safe", "0",
 		"-i", concatFile,

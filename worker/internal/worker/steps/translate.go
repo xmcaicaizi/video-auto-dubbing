@@ -41,7 +41,7 @@ func (p *TranslateProcessor) Process(ctx context.Context, taskID uuid.UUID, msg 
 		zap.Int("segment_count", len(payload.SegmentIDs)),
 		zap.String("source_language", payload.SourceLanguage),
 		zap.String("target_language", payload.TargetLanguage),
-		zap.Int("batch_size", p.translateBatchSize(payload)),
+		zap.Int("batch_size", 20), // Will be calculated later with effective config
 	)
 
 	segments, err := p.loadSegments(ctx, taskID)
@@ -52,22 +52,21 @@ func (p *TranslateProcessor) Process(ctx context.Context, taskID uuid.UUID, msg 
 		return fmt.Errorf("no segments to translate for task")
 	}
 
-	// Load per-task GLM config; fallback to worker config if not set.
-	var glmAPIKey, glmAPIURL, glmModel string
-	q := `SELECT glm_api_key, glm_api_url, glm_model FROM tasks WHERE id = $1`
-	_ = p.deps.DB.QueryRowContext(ctx, q, taskID).Scan(&glmAPIKey, &glmAPIURL, &glmModel)
-	if glmAPIKey == "" {
-		glmAPIKey = p.deps.Config.External.GLM.APIKey
+	// Get effective configuration for this task
+	effectiveConfig, err := p.deps.ConfigManager.GetEffectiveConfig(ctx, taskID)
+	if err != nil {
+		return fmt.Errorf("failed to get effective config: %w", err)
 	}
-	if glmAPIURL == "" {
-		glmAPIURL = p.deps.Config.External.GLM.APIURL
-	}
-	if glmModel == "" {
-		glmModel = p.deps.Config.External.GLM.Model
-	}
-	transClient := translate.NewClient(config.GLMConfig{APIKey: glmAPIKey, APIURL: glmAPIURL, Model: glmModel}, p.deps.Logger)
 
-	if err := p.translateBatches(ctx, taskID, payload, segments, transClient); err != nil {
+	// Validate translate configuration
+	if err := effectiveConfig.ValidateForTranslate(); err != nil {
+		return fmt.Errorf("translate configuration validation failed: %w", err)
+	}
+
+	// Create translate client with effective configuration
+	transClient := translate.NewClient(effectiveConfig.External.GLM, p.deps.Logger)
+
+	if err := p.translateBatches(ctx, taskID, payload, segments, transClient, effectiveConfig); err != nil {
 		return err
 	}
 
@@ -79,10 +78,10 @@ func (p *TranslateProcessor) Process(ctx context.Context, taskID uuid.UUID, msg 
 		"created_at": time.Now().Format(time.RFC3339),
 		"payload": map[string]interface{}{
 			"task_id":          taskID.String(),
-			"batch_size":       p.deps.Config.Processing.TTS.BatchSize,
-			"max_concurrency":  p.deps.Config.Processing.TTS.MaxConcurrency,
-			"max_retries":      p.deps.Config.Processing.TTS.MaxRetries,
-			"retry_delay_sec":  p.deps.Config.Processing.TTS.RetryDelay.Seconds(),
+			"batch_size":       effectiveConfig.Processing.TTS.BatchSize,
+			"max_concurrency":  effectiveConfig.Processing.TTS.MaxConcurrency,
+			"max_retries":      effectiveConfig.Processing.TTS.MaxRetries,
+			"retry_delay_sec":  effectiveConfig.Processing.TTS.RetryDelay.Seconds(),
 			"source_language":  payload.SourceLanguage,
 			"target_language":  payload.TargetLanguage,
 			"segment_ids":      payload.SegmentIDs,
@@ -126,23 +125,23 @@ func (p *TranslateProcessor) loadSegments(ctx context.Context, taskID uuid.UUID)
 	return segments, nil
 }
 
-func (p *TranslateProcessor) translateBatchSize(payload models.TranslatePayload) int {
+func (p *TranslateProcessor) translateBatchSize(payload models.TranslatePayload, cfg *config.EffectiveConfig) int {
 	if payload.BatchSize > 0 {
 		return payload.BatchSize
 	}
-	if p.deps.Config.Processing.Translate.BatchSize > 0 {
-		return p.deps.Config.Processing.Translate.BatchSize
+	if cfg.Processing.Translate.BatchSize > 0 {
+		return cfg.Processing.Translate.BatchSize
 	}
 	return 20
 }
 
-func (p *TranslateProcessor) translateBatches(ctx context.Context, taskID uuid.UUID, payload models.TranslatePayload, segments []translateSegment, client *translate.Client) error {
-	batchSize := p.translateBatchSize(payload)
-	itemRetries := p.deps.Config.Processing.Translate.ItemMaxRetries
+func (p *TranslateProcessor) translateBatches(ctx context.Context, taskID uuid.UUID, payload models.TranslatePayload, segments []translateSegment, client *translate.Client, cfg *config.EffectiveConfig) error {
+	batchSize := p.translateBatchSize(payload, cfg)
+	itemRetries := cfg.Processing.Translate.ItemMaxRetries
 	if itemRetries <= 0 {
 		itemRetries = 2
 	}
-	maxTextLength := p.deps.Config.Processing.Translate.MaxTextLength
+	maxTextLength := cfg.Processing.Translate.MaxTextLength
 	if maxTextLength <= 0 {
 		maxTextLength = 4000
 	}

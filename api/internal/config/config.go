@@ -29,9 +29,6 @@ type ServerConfig struct {
 // Load loads configuration from environment variables.
 func Load() (*Config, error) {
 	loader := sharedconfig.NewLoader(
-		sharedconfig.WithDefaults(map[string]interface{}{
-			"MINIO_PUBLIC_ENDPOINT": "localhost:9000",
-		}),
 		sharedconfig.WithMinIOPublicFallback(),
 	)
 

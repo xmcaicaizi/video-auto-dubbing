@@ -20,11 +20,11 @@
 
 
 
-- ✅ **ASR 语音识别**: 使用 Moonshine 开源模型进行带时间戳的语音识别
+- ✅ **ASR 语音识别**: 使用火山引擎大模型API进行带时间戳的语音识别和说话人分离
 
 - ✅ **机器翻译**: 利用 GLM 模型进行跨语言翻译
 
-- ✅ **可控 TTS**: 基于本地部署的 IndexTTS2（代码内置于 `tts_service/indextts`，权重从 HuggingFace 拉取）实现受时间轴约束的可控语音合成
+- ✅ **可控 TTS**: 基于远程部署的 index-tts-vllm 服务实现受时间轴约束的可控语音合成
 
 - ✅ **音画同步**: 通过时间轴约束解决跨语言配音时音画不同步的问题
 
@@ -54,15 +54,11 @@
 
 
 
-### TTS 服务
+### 外部服务依赖
 
-- **语言**: Python 3.11+
-
-- **框架**: FastAPI
-
-- **依赖管理**: uv
-
-- **模型**: IndexTTS-2（本地推理，权重从 HuggingFace 拉取）
+- **ASR**: 火山引擎大模型录音文件识别API
+- **TTS**: 远程 index-tts-vllm 服务 (支持 IndexTTS-2)
+- **翻译**: GLM 大模型API
 
 
 
@@ -78,7 +74,7 @@
 
 ## 快速开始（权威入口）
 
-完整、去重的步骤请阅读 [`docs/startup-guide.md`](docs/startup-guide.md)（唯一权威的快速启动指南）。概要流程如下：
+完整的部署步骤请阅读 [`docs/quick-start.md`](docs/quick-start.md)（重构后的快速启动指南）。概要流程如下：
 
 1. 安装 Docker Engine 20.10+ 与 Docker Compose（推荐 2.0+；如仅有 `docker-compose` v1 也可用），预留 8GB 内存 / 50GB 磁盘。
 2. 克隆仓库并进入目录：`git clone <repository-url> && cd vedio`。
@@ -115,7 +111,7 @@ GLM_API_KEY=你的真实Key bash scripts/e2e_test.sh
 
 
 
-详细部署说明请参考[部署指南](docs/deployment.md)
+详细部署说明请参考[部署指南](docs/deployment-guide.md)
 
 
 
@@ -133,7 +129,7 @@ vedio/
 
 ├── tts_service/            # TTS 服务（Python + uv）
 
-├── asr_service/            # ASR service (Python + Moonshine)
+
 
 ├── gateway/                # NGINX 网关配置
 
@@ -187,11 +183,11 @@ vedio/
 
 2. **提取音频**: Worker 使用 ffmpeg 从视频提取音轨
 
-3. **语音识别**: 调用 Moonshine ASR 服务，获取带时间戳的识别结果
+3. **语音识别**: 调用火山引擎ASR API，获取带时间戳的识别结果和说话人信息
 
 4. **机器翻译**: 调用 GLM API，将识别文本翻译为目标语言
 
-5. **语音合成**: 调用 TTS 服务，根据时间轴约束合成配音音频
+5. **语音合成**: 调用远程 TTS 服务，根据时间轴约束合成配音音频
 
 6. **视频合成**: 使用 ffmpeg 将配音音频替换原视频音轨
 
@@ -199,7 +195,7 @@ vedio/
 
 
 
-详细流程请参考[架构设计文档](docs/architecture.md)
+详细架构请参考[架构概览文档](docs/ARCHITECTURE_OVERVIEW.md)和[架构设计文档](docs/architecture.md)
 
 
 
@@ -454,8 +450,6 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 
 如有问题或建议，请提交 Issue 或联系项目维护者。
-
-
 
 
 

@@ -13,12 +13,15 @@ import (
 )
 
 // Service handles file storage operations.
+// It currently implements ObjectStorage.
 type Service struct {
 	client        *minio.Client
 	bucket        string
 	presignClient *miniosdk.Client
 	hostOverride  string
 }
+
+var _ ObjectStorage = (*Service)(nil)
 
 // Option customizes the storage service behaviour.
 type Option func(*Service)

@@ -93,8 +93,8 @@ func (p *MuxVideoProcessor) Process(ctx context.Context, taskID uuid.UUID, msg m
 		"-c:v", "copy", // Copy video codec
 		"-c:a", "aac", // Encode audio as AAC
 	}
-	if p.deps.Config.FFmpeg.DenoiseFilter != "" {
-		ffmpegArgs = append(ffmpegArgs, "-af", p.deps.Config.FFmpeg.DenoiseFilter)
+	if p.deps.ProcessingConfig.FFmpeg.DenoiseFilter != "" {
+		ffmpegArgs = append(ffmpegArgs, "-af", p.deps.ProcessingConfig.FFmpeg.DenoiseFilter)
 	}
 	ffmpegArgs = append(ffmpegArgs,
 		"-map", "0:v:0", // Use video from first input
@@ -104,7 +104,7 @@ func (p *MuxVideoProcessor) Process(ctx context.Context, taskID uuid.UUID, msg m
 		outputPath,
 	)
 
-	cmd := exec.CommandContext(ctx, p.deps.Config.FFmpeg.Path, ffmpegArgs...)
+	cmd := exec.CommandContext(ctx, p.deps.ProcessingConfig.FFmpeg.Path, ffmpegArgs...)
 
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("ffmpeg muxing failed: %w", err)

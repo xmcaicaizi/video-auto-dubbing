@@ -3,11 +3,9 @@ package steps
 import (
 	"context"
 
-	"vedio/worker/internal/asr"
 	"vedio/worker/internal/config"
 	"vedio/worker/internal/database"
 	"vedio/worker/internal/storage"
-	"vedio/worker/internal/tts"
 
 	"go.uber.org/zap"
 )
@@ -19,11 +17,10 @@ type Publisher interface {
 
 // Deps groups common dependencies shared across step processors.
 type Deps struct {
-	DB        *database.DB
-	Storage   *storage.Service
-	Publisher Publisher
-	Config    *config.Config
-	Logger    *zap.Logger
-	ASRClient *asr.Client
-	TTSClient *tts.Client
+	DB             *database.DB
+	Storage        storage.ObjectStorage
+	Publisher      Publisher
+	ConfigManager  *config.Manager
+	ProcessingConfig *config.Config  // Worker processing config (timeouts, batch sizes, etc.)
+	Logger         *zap.Logger
 }

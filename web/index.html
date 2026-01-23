@@ -196,40 +196,217 @@
             color: #666;
         }
 
+        .settings-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 9998;
+        }
+
         .settings-panel {
             display: none;
             position: fixed;
-            top: 20px;
-            right: 20px;
-            width: 380px;
-            max-height: 80vh;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 600px;
+            max-width: 90vw;
+            max-height: 85vh;
             overflow-y: auto;
             background: white;
-            border: 1px solid #eee;
             border-radius: 12px;
-            padding: 16px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            padding: 24px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             z-index: 9999;
         }
 
-        .settings-title {
+        .settings-hint {
+            font-size: 12px;
+            color: #777;
+            margin-top: 6px;
+            line-height: 1.4;
+        }
+
+        .settings-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 8px;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #eee;
         }
 
-        .settings-note {
-            font-size: 12px;
+        .settings-header h2 {
+            margin: 0;
+            color: #333;
+        }
+
+        .settings-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 12px;
+        }
+
+        .settings-tab {
+            padding: 8px 16px;
+            border: none;
+            background: #f5f5f5;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
             color: #666;
-            margin-bottom: 10px;
+            transition: all 0.2s;
+        }
+
+        .settings-tab:hover {
+            background: #e8e8e8;
+        }
+
+        .settings-tab.active {
+            background: #667eea;
+            color: white;
+        }
+
+        .settings-content {
+            display: none;
+        }
+
+        .settings-content.active {
+            display: block;
+        }
+
+        .settings-section {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .settings-section-title {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .settings-section-title .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ccc;
+        }
+
+        .settings-section-title .status-dot.connected {
+            background: #4caf50;
+        }
+
+        .settings-section-title .status-dot.failed {
+            background: #f44336;
+        }
+
+        .settings-row {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .settings-row .form-group {
+            flex: 1;
+            margin: 0;
+        }
+
+        .settings-input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        .settings-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .settings-checkbox-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-top: 8px;
+        }
+
+        .settings-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #555;
+        }
+
+        .settings-checkbox input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+
+        .btn-test {
+            padding: 10px 16px;
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            white-space: nowrap;
+        }
+
+        .btn-test:hover {
+            background: #e8e8e8;
+        }
+
+        .btn-test:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
 
         .settings-actions {
             display: flex;
             justify-content: flex-end;
-            gap: 8px;
-            margin-top: 10px;
+            gap: 12px;
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid #eee;
+        }
+
+        .settings-status {
+            font-size: 12px;
+            padding: 6px 10px;
+            border-radius: 4px;
+            margin-top: 8px;
+        }
+
+        .settings-status.success {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .settings-status.error {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .settings-status.loading {
+            background: #e3f2fd;
+            color: #1976d2;
         }
 
         .download-select {
@@ -396,48 +573,228 @@
             return `<div class="task-steps">${items}</div>`;
         }
 
-        function getSettings() {
+        // Settings state
+        let currentSettings = null;
+        let settingsLoading = false;
+
+        // Load settings from server
+        async function loadSettings() {
             try {
-                const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
-                return raw ? JSON.parse(raw) : {};
-            } catch (_) {
-                return {};
+                const response = await fetch(`${API_BASE}/settings`);
+                const data = await response.json();
+                if (data.code === 0) {
+                    currentSettings = data.data;
+                    return data.data;
+                }
+            } catch (error) {
+                console.error('加载设置失败:', error);
+            }
+            return null;
+        }
+
+        // Open settings panel
+        async function openSettings() {
+            document.getElementById('settingsOverlay').style.display = 'block';
+            document.getElementById('settingsPanel').style.display = 'block';
+
+            // Show loading state
+            showSettingsStatus('loading', '加载设置中...');
+
+            // Load settings from server
+            const settings = await loadSettings();
+            if (settings) {
+                populateSettingsForm(settings);
+                hideSettingsStatus();
+            } else {
+                showSettingsStatus('error', '加载设置失败，显示默认值');
+            }
+
+            // Default to ASR tab
+            switchSettingsTab('asr');
+        }
+
+        // Populate form with settings
+        function populateSettingsForm(settings) {
+            // ASR settings
+            document.getElementById('asr_app_key').value = settings.asr?.volcengine_app_key || '';
+            document.getElementById('asr_access_key').value = settings.asr?.volcengine_access_key || '';
+            document.getElementById('asr_resource_id').value = settings.asr?.volcengine_resource_id || 'volc.bigasr.auc';
+            document.getElementById('asr_speaker_info').checked = settings.asr?.enable_speaker_info !== false;
+            document.getElementById('asr_emotion').checked = settings.asr?.enable_emotion !== false;
+            document.getElementById('asr_gender').checked = settings.asr?.enable_gender !== false;
+            document.getElementById('asr_punc').checked = settings.asr?.enable_punc !== false;
+            document.getElementById('asr_itn').checked = settings.asr?.enable_itn !== false;
+
+            // TTS settings
+            document.getElementById('tts_service_url').value = settings.tts?.service_url || '';
+            document.getElementById('tts_api_key').value = settings.tts?.api_key || '';
+            document.getElementById('tts_backend').value = settings.tts?.backend || 'vllm';
+
+            // Translate settings
+            document.getElementById('translate_glm_api_key').value = settings.translate?.glm_api_key || '';
+            document.getElementById('translate_glm_api_url').value = settings.translate?.glm_api_url || 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
+            document.getElementById('translate_glm_model').value = settings.translate?.glm_model || 'glm-4-flash';
+
+            // Storage settings
+            document.getElementById('storage_backend').value = settings.storage?.backend || 'minio';
+            document.getElementById('oss_endpoint').value = settings.storage?.oss?.endpoint || '';
+            document.getElementById('oss_bucket').value = settings.storage?.oss?.bucket || '';
+            document.getElementById('oss_public_domain').value = settings.storage?.oss?.public_domain || '';
+            document.getElementById('oss_access_key_id').value = settings.storage?.oss?.access_key_id || '';
+            document.getElementById('oss_access_key_secret').value = settings.storage?.oss?.access_key_secret || '';
+            document.getElementById('oss_prefix').value = settings.storage?.oss?.prefix || '';
+            document.getElementById('oss_use_ssl').checked = settings.storage?.oss?.use_ssl !== false;
+        }
+
+        // Close settings panel
+        function closeSettings() {
+            document.getElementById('settingsOverlay').style.display = 'none';
+            document.getElementById('settingsPanel').style.display = 'none';
+            hideSettingsStatus();
+        }
+
+        // Switch between settings tabs
+        function switchSettingsTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.settings-tab').forEach(tab => {
+                tab.classList.toggle('active', tab.dataset.tab === tabName);
+            });
+
+            // Update content panels
+            document.querySelectorAll('.settings-content').forEach(content => {
+                content.classList.toggle('active', content.id === `settings-${tabName}`);
+            });
+        }
+
+        // Save settings to server
+        async function saveSettings() {
+            const saveBtn = document.getElementById('saveSettingsBtn');
+            saveBtn.disabled = true;
+            saveBtn.textContent = '保存中...';
+
+            const settings = {
+                asr: {
+                    volcengine_app_key: document.getElementById('asr_app_key').value.trim(),
+                    volcengine_access_key: document.getElementById('asr_access_key').value.trim(),
+                    volcengine_resource_id: document.getElementById('asr_resource_id').value.trim(),
+                    enable_speaker_info: document.getElementById('asr_speaker_info').checked,
+                    enable_emotion: document.getElementById('asr_emotion').checked,
+                    enable_gender: document.getElementById('asr_gender').checked,
+                    enable_punc: document.getElementById('asr_punc').checked,
+                    enable_itn: document.getElementById('asr_itn').checked
+                },
+                tts: {
+                    service_url: document.getElementById('tts_service_url').value.trim(),
+                    api_key: document.getElementById('tts_api_key').value.trim(),
+                    backend: document.getElementById('tts_backend').value
+                },
+                translate: {
+                    glm_api_key: document.getElementById('translate_glm_api_key').value.trim(),
+                    glm_api_url: document.getElementById('translate_glm_api_url').value.trim(),
+                    glm_model: document.getElementById('translate_glm_model').value.trim()
+                },
+                storage: {
+                    backend: document.getElementById('storage_backend').value,
+                    oss: {
+                        endpoint: document.getElementById('oss_endpoint').value.trim(),
+                        bucket: document.getElementById('oss_bucket').value.trim(),
+                        public_domain: document.getElementById('oss_public_domain').value.trim(),
+                        access_key_id: document.getElementById('oss_access_key_id').value.trim(),
+                        access_key_secret: document.getElementById('oss_access_key_secret').value.trim(),
+                        prefix: document.getElementById('oss_prefix').value.trim(),
+                        use_ssl: document.getElementById('oss_use_ssl').checked
+                    }
+                }
+            };
+
+            try {
+                const response = await fetch(`${API_BASE}/settings`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(settings)
+                });
+
+                const data = await response.json();
+                if (data.code === 0) {
+                    showSettingsStatus('success', '设置已保存到服务器');
+                    currentSettings = settings;
+                    setTimeout(() => {
+                        closeSettings();
+                    }, 1000);
+                } else {
+                    showSettingsStatus('error', '保存失败: ' + data.message);
+                }
+            } catch (error) {
+                showSettingsStatus('error', '保存失败: ' + error.message);
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = '保存设置';
             }
         }
 
-        function setSettings(next) {
-            localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(next || {}));
+        // Test connection
+        async function testConnection(type) {
+            const btn = document.getElementById(`test-${type}-btn`) || document.getElementById(`test-${type}`);
+            const statusDot = document.getElementById(`${type}-status-dot`);
+
+            if (!btn) {
+                showSettingsStatus('error', `找不到测试按钮: ${type}`);
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = '测试中...';
+            statusDot.className = 'status-dot';
+
+            try {
+                // If testing storage, ensure latest form values are saved first (backend decides behaviour server-side)
+                if (type === 'storage') {
+                    // no-op; server reads from DB settings, user should click "保存设置" first
+                }
+                const response = await fetch(`${API_BASE}/settings/test`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type })
+                });
+
+                const data = await response.json();
+                if (data.code === 0) {
+                    const result = data.data;
+                    statusDot.className = `status-dot ${result.status}`;
+                    showSettingsStatus(
+                        result.status === 'connected' ? 'success' : 'error',
+                        result.message + (result.latency_ms ? ` (${result.latency_ms}ms)` : '')
+                    );
+                } else {
+                    statusDot.className = 'status-dot failed';
+                    showSettingsStatus('error', '测试失败: ' + data.message);
+                }
+            } catch (error) {
+                statusDot.className = 'status-dot failed';
+                showSettingsStatus('error', '测试失败: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '测试连接';
+            }
         }
 
-        function openSettings() {
-            const s = getSettings();
-            document.getElementById('asr_appid').value = s.asr_appid || '';
-            document.getElementById('asr_token').value = s.asr_token || '';
-            document.getElementById('asr_cluster').value = s.asr_cluster || '';
-            document.getElementById('asr_api_key').value = s.asr_api_key || '';
-            document.getElementById('glm_api_key').value = s.glm_api_key || '';
-            document.getElementById('glm_model').value = s.glm_model || 'glm-4.5';
-            document.getElementById('glm_api_url').value = s.glm_api_url || 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
-            document.getElementById('settingsPanel').style.display = 'block';
+        // Show status message
+        function showSettingsStatus(type, message) {
+            const statusEl = document.getElementById('settingsStatusMessage');
+            statusEl.className = `settings-status ${type}`;
+            statusEl.textContent = message;
+            statusEl.style.display = 'block';
         }
 
-        function closeSettings() {
-            document.getElementById('settingsPanel').style.display = 'none';
+        // Hide status message
+        function hideSettingsStatus() {
+            const statusEl = document.getElementById('settingsStatusMessage');
+            statusEl.style.display = 'none';
         }
 
-        function saveSettings() {
-            const next = {
-                asr_appid: (document.getElementById('asr_appid').value || '').trim(),
-                asr_token: (document.getElementById('asr_token').value || '').trim(),
-                asr_cluster: (document.getElementById('asr_cluster').value || '').trim(),
-                asr_api_key: (document.getElementById('asr_api_key').value || '').trim(),
-                glm_api_key: (document.getElementById('glm_api_key').value || '').trim(),
-                glm_model: (document.getElementById('glm_model').value || 'glm-4.5').trim(),
-                glm_api_url: (document.getElementById('glm_api_url').value || 'https://open.bigmodel.cn/api/paas/v4/chat/completions').trim(),
-            };
-            setSettings(next);
-            closeSettings();
-            alert('设置已保存（仅本浏览器）');
+        // For backward compatibility with task creation
+        function getSettings() {
+            return currentSettings || {};
         }
 
         // 上传视频
@@ -496,7 +853,7 @@
             try {
                 const response = await fetch(`${API_BASE}/tasks`);
                 const data = await response.json();
-                
+
                 if (data.code === 0) {
                     const tasks = data.data.tasks || [];
                     const detailTasks = await Promise.all(tasks.map(async (task) => {
@@ -520,7 +877,7 @@
         // 渲染任务列表
         function renderTasks(tasks) {
             const tasksList = document.getElementById('tasksList');
-            
+
             if (tasks.length === 0) {
                 tasksList.innerHTML = '<div class="loading">暂无任务</div>';
                 return;
@@ -553,13 +910,13 @@
                     ${stepsHtml}
                     ${task.error ? `<div class="error">错误: ${task.error}</div>` : ''}
                     <div class="task-actions">
-                        ${task.status === 'done' ? 
+                        ${task.status === 'done' ?
                             `<select class="download-select" id="downloadType-${task.task_id}">
                                 <option value="video">视频</option>
                                 <option value="audio">配音音频</option>
                                 <option value="subtitle">字幕</option>
                             </select>
-                            <button class="btn btn-primary" onclick="downloadTask('${task.task_id}')">下载结果</button>` : 
+                            <button class="btn btn-primary" onclick="downloadTask('${task.task_id}')">下载结果</button>` :
                             ''
                         }
                         <button class="btn" onclick="refreshTask('${task.task_id}')">刷新</button>
@@ -601,7 +958,7 @@
             try {
                 const response = await fetch(`${API_BASE}/tasks/${taskId}`);
                 const data = await response.json();
-                
+
                 if (data.code === 0) {
                     loadTasks();
                 }
@@ -617,7 +974,7 @@
                 const downloadType = select ? select.value : 'video';
                 const response = await fetch(`${API_BASE}/tasks/${taskId}/download?type=${encodeURIComponent(downloadType)}`);
                 const data = await response.json();
-                
+
                 if (data.code === 0 && data.data.download_url) {
                     window.open(data.data.download_url, '_blank');
                 } else {
@@ -629,7 +986,7 @@
         }
 
         // 文件选择处理
-        
+
         async function deleteTask(taskId) {
             if (!confirm('确定要删除该任务吗？此操作不可撤销。')) {
                 return;
@@ -659,31 +1016,220 @@ document.getElementById('videoFile').addEventListener('change', function(e) {
         // 页面加载时获取任务列表
         loadTasks();
         setInterval(loadTasks, 5000); // 每5秒刷新一次
-        // Settings UI (simple inline panel)
-        document.addEventListener('DOMContentLoaded', () => {
-            const panel = document.createElement('div');
-            panel.id = 'settingsPanel';
-            panel.className = 'settings-panel';
-            panel.innerHTML = `
-                <div class="settings-title">
-                    <div style="font-weight:700; color:#333;">设置</div>
-                    <button class="btn" onclick="closeSettings()">✕</button>
-                </div>
-                <div class="settings-note">保存到 localStorage，创建任务时提交给后端。</div>
-                <div class="form-group"><label>ASR App ID</label><input id="asr_appid" placeholder="your_asr_appid" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
-                <div class="form-group"><label>ASR Token</label><input id="asr_token" placeholder="your_asr_token" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
-                <div class="form-group"><label>ASR Cluster</label><input id="asr_cluster" placeholder="volcengine_streaming_common" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
-                <div class="form-group"><label>ASR API Key（豆包语音）</label><input id="asr_api_key" placeholder="your_asr_api_key" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
-                <div class="form-group"><label>GLM API Key</label><input id="glm_api_key" placeholder="your_glm_api_key" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
-                <div class="form-group"><label>GLM API URL</label><input id="glm_api_url" placeholder="https://open.bigmodel.cn/api/paas/v4/chat/completions" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
-                <div class="form-group"><label>GLM Model</label><input id="glm_model" placeholder="glm-4.5" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></div>
-                <div class="settings-actions">
-                    <button class="btn" onclick="closeSettings()">取消</button>
-                    <button class="upload-btn" onclick="saveSettings()">保存</button>
-                </div>
-            `;
-            document.body.appendChild(panel);
-        });
+
+        // Preload settings on page load
+        loadSettings();
     </script>
+
+    <!-- Settings Overlay -->
+    <div id="settingsOverlay" class="settings-overlay" onclick="closeSettings()"></div>
+
+    <!-- Settings Panel -->
+    <div id="settingsPanel" class="settings-panel">
+        <div class="settings-header">
+            <h2>系统设置</h2>
+            <button class="btn" onclick="closeSettings()">✕</button>
+        </div>
+
+        <!-- Tabs -->
+        <div class="settings-tabs">
+            <button class="settings-tab active" data-tab="asr" onclick="switchSettingsTab('asr')">ASR 服务</button>
+            <button class="settings-tab" data-tab="tts" onclick="switchSettingsTab('tts')">TTS 服务</button>
+            <button class="settings-tab" data-tab="translate" onclick="switchSettingsTab('translate')">翻译服务</button>
+            <button class="settings-tab" data-tab="storage" onclick="switchSettingsTab('storage')">对象存储</button>
+        </div>
+
+        <!-- ASR Settings -->
+        <div id="settings-asr" class="settings-content active">
+            <div class="settings-section">
+                <div class="settings-section-title">
+                    <span id="asr-status-dot" class="status-dot"></span>
+                    火山引擎 ASR 配置
+                </div>
+
+                <div class="settings-row">
+                    <div class="form-group">
+                        <label>App Key</label>
+                        <input type="text" id="asr_app_key" class="settings-input" placeholder="火山引擎 App Key">
+                    </div>
+                    <button id="test-asr-btn" class="btn-test" onclick="testConnection('asr')">测试连接</button>
+                </div>
+
+                <div class="form-group">
+                    <label>Access Key</label>
+                    <input type="password" id="asr_access_key" class="settings-input" placeholder="火山引擎 Access Key">
+                </div>
+
+                <div class="form-group">
+                    <label>资源 ID</label>
+                    <select id="asr_resource_id" class="settings-input">
+                        <option value="volc.bigasr.auc">volc.bigasr.auc (通用场景)</option>
+                        <option value="volc.bigasr.auc.meeting">volc.bigasr.auc.meeting (会议场景)</option>
+                        <option value="volc.bigasr.auc.edu">volc.bigasr.auc.edu (教育场景)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>识别选项</label>
+                    <div class="settings-checkbox-group">
+                        <label class="settings-checkbox">
+                            <input type="checkbox" id="asr_speaker_info" checked> 说话人分离
+                        </label>
+                        <label class="settings-checkbox">
+                            <input type="checkbox" id="asr_emotion" checked> 情绪检测
+                        </label>
+                        <label class="settings-checkbox">
+                            <input type="checkbox" id="asr_gender" checked> 性别检测
+                        </label>
+                        <label class="settings-checkbox">
+                            <input type="checkbox" id="asr_punc" checked> 标点符号
+                        </label>
+                        <label class="settings-checkbox">
+                            <input type="checkbox" id="asr_itn" checked> 数字转换
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TTS Settings -->
+        <div id="settings-tts" class="settings-content">
+            <div class="settings-section">
+                <div class="settings-section-title">
+                    <span id="tts-status-dot" class="status-dot"></span>
+                    TTS 服务配置 (index-tts-vllm)
+                </div>
+
+                <div class="settings-row">
+                    <div class="form-group">
+                        <label>服务地址</label>
+                        <input type="text" id="tts_service_url" class="settings-input" placeholder="https://your-server:6006">
+                    </div>
+                    <button id="test-tts-btn" class="btn-test" onclick="testConnection('tts')">测试连接</button>
+                </div>
+
+                <div class="form-group">
+                    <label>API Key (可选)</label>
+                    <input type="password" id="tts_api_key" class="settings-input" placeholder="如服务需要认证则填写">
+                </div>
+
+                <div class="form-group">
+                    <label>后端类型</label>
+                    <select id="tts_backend" class="settings-input">
+                        <option value="vllm">VLLM 后端 (推荐)</option>
+                        <option value="legacy">Legacy 后端</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Translate Settings -->
+        <div id="settings-translate" class="settings-content">
+            <div class="settings-section">
+                <div class="settings-section-title">
+                    <span id="translate-status-dot" class="status-dot"></span>
+                    翻译服务配置 (GLM)
+                </div>
+
+                <div class="settings-row">
+                    <div class="form-group">
+                        <label>GLM API Key</label>
+                        <input type="password" id="translate_glm_api_key" class="settings-input" placeholder="智谱 API Key">
+                    </div>
+                    <button id="test-translate-btn" class="btn-test" onclick="testConnection('translate')">测试连接</button>
+                </div>
+
+                <div class="form-group">
+                    <label>API URL</label>
+                    <input type="text" id="translate_glm_api_url" class="settings-input" placeholder="https://open.bigmodel.cn/api/paas/v4/chat/completions">
+                </div>
+
+                <div class="form-group">
+                    <label>模型</label>
+                    <select id="translate_glm_model" class="settings-input">
+                        <option value="glm-4-flash">GLM-4-Flash (首个免费大模型，推荐)</option>
+                        <option value="glm-4.5">GLM-4.5</option>
+                        <option value="glm-4">GLM-4</option>
+                        <option value="glm-4-air">GLM-4-Air</option>
+                    </select>
+                </div>
+                <div style="margin-top: 8px; padding: 8px; background: #e8f5e9; border-radius: 4px; font-size: 12px; color: #2e7d32;">
+                    🎉 <strong>GLM-4-Flash</strong> 智谱AI首个免费大模型
+                    <br>✨ 超长上下文(128K)、多语言支持(26种)、智能翻译能力
+                    <br>🚀 特别适合视频字幕翻译任务
+                </div>
+            </div>
+        </div>
+
+        <!-- Storage Settings -->
+        <div id="settings-storage" class="settings-content">
+            <div class="settings-section">
+                <div class="settings-section-title">
+                    <span id="storage-status-dot" class="status-dot"></span>
+                    对象存储配置
+                </div>
+
+                <div class="form-group">
+                    <label>存储后端</label>
+                    <select id="storage_backend" class="settings-input">
+                        <option value="oss">阿里云 OSS</option>
+                        <option value="minio">MinIO（本地/内网）</option>
+                    </select>
+                    <div class="settings-hint">选择 OSS 后，系统会生成 OSS 的签名下载链接给火山 ASR 使用（无需暴露本机 MinIO）。</div>
+                </div>
+
+                <div class="settings-row">
+                    <div class="form-group">
+                        <label>OSS Endpoint（地域节点）</label>
+                        <input type="text" id="oss_endpoint" class="settings-input" placeholder="oss-cn-beijing.aliyuncs.com">
+                    </div>
+                    <div class="form-group">
+                        <label>Bucket 名称</label>
+                        <input type="text" id="oss_bucket" class="settings-input" placeholder="vedio-auto-tran">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>CNAME 域名（公网下载域名）</label>
+                    <input type="text" id="oss_public_domain" class="settings-input" placeholder="vedio-auto-tran.cn-beijing.taihangcda.cn">
+                    <div class="settings-hint">用于生成对外可访问的签名 URL（推荐填写你绑定的 CNAME）。</div>
+                </div>
+
+                <div class="settings-row">
+                    <div class="form-group">
+                        <label>AccessKeyId</label>
+                        <input type="text" id="oss_access_key_id" class="settings-input" placeholder="AKID...">
+                    </div>
+                    <div class="form-group">
+                        <label>AccessKeySecret</label>
+                        <input type="password" id="oss_access_key_secret" class="settings-input" placeholder="AKSECRET...">
+                    </div>
+                </div>
+
+                <div class="settings-row">
+                    <div class="form-group">
+                        <label>对象 Key 前缀（可选）</label>
+                        <input type="text" id="oss_prefix" class="settings-input" placeholder="video-auto-dubbing">
+                    </div>
+                    <div class="form-group">
+                        <label style="display:flex; align-items:center; gap:8px; margin-top: 28px;">
+                            <input type="checkbox" id="oss_use_ssl" checked> 使用 HTTPS
+                        </label>
+                    </div>
+                </div>
+
+                <button id="test-storage" class="btn-test" onclick="testConnection('storage')">测试连接</button>
+            </div>
+        </div>
+
+        <!-- Status Message -->
+        <div id="settingsStatusMessage" class="settings-status" style="display: none;"></div>
+
+        <!-- Actions -->
+        <div class="settings-actions">
+            <button class="btn" onclick="closeSettings()">取消</button>
+            <button id="saveSettingsBtn" class="upload-btn" onclick="saveSettings()">保存设置</button>
+        </div>
+    </div>
 </body>
 </html>

@@ -124,10 +124,14 @@
 完整的部署步骤请阅读 [`docs/quick-start.md`](docs/quick-start.md)（重构后的快速启动指南）。概要流程如下：
 
 1. 安装 Docker Engine 20.10+ 与 Docker Compose（推荐 2.0+；如仅有 `docker-compose` v1 也可用），预留 8GB 内存 / 50GB 磁盘。
-2. 克隆仓库并进入目录：`git clone <repository-url> && cd vedio`。
-3. （可选）根据 `env.example` 配置 API Key、模型与存储等环境变量。
-4. 下载 IndexTTS-2 与 Moonshine ASR 模型（见 `docs/startup-guide.md`）。
-5. 启动并验证：`docker compose up -d && docker compose ps`（如为 v1 请替换为 `docker-compose`），前端访问 `http://localhost`，API 健康检查 `http://localhost:8080/health`。
+2. 克隆仓库并进入目录：`git clone <repository-url> && cd video-auto-dubbing`。
+3. **配置外部服务**：根据 `.env.example` 创建 `.env` 并填写必需的 API Key：
+   - 火山引擎 ASR：`VOLCENGINE_ASR_APP_KEY`、`VOLCENGINE_ASR_ACCESS_KEY`
+   - GLM 翻译：`GLM_API_KEY`
+   - 阿里云 OSS：`OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET`
+   - 远程 TTS 服务：`TTS_SERVICE_URL`
+4. 启动基础服务：`docker compose up -d && docker compose ps`（如为 v1 请替换为 `docker-compose`）
+5. 验证部署：前端访问 `http://localhost`，API 健康检查 `http://localhost:8080/health`
 
 ### 一键 Docker 部署（推荐）
 
@@ -135,7 +139,9 @@
 bash scripts/bootstrap.sh
 ```
 
-脚本会自动复制 `env.example` 到 `.env`（如不存在）、下载 IndexTTS-2 与 Moonshine ASR 模型，并自动选择 `docker compose`（v2）或 `docker-compose`（v1）执行启动。
+脚本会自动复制 `.env.example` 到 `.env`（如不存在），并自动选择 `docker compose`（v2）或 `docker-compose`（v1）执行启动。
+
+**注意**：本系统采用 API 调用架构，不需要本地下载大型模型文件。
 
 ### 真实 E2E 测试（10 秒样例）
 
@@ -426,7 +432,7 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 - [队列消息规范](docs/queue-messages.md) - RabbitMQ 消息格式和重试策略
 
-- [ASR 服务规范](docs/asr-service.md) - Moonshine ASR 服务接口和配置
+- [ASR 服务规范](docs/asr-service.md) - 火山引擎 ASR 服务接口和配置
 
 - [TTS 服务规范](docs/tts-service.md) - TTS 服务接口和配置
 
@@ -500,18 +506,11 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 
 
-## IndexTTS2 说明
-
-
-
-- TTS 服务使用的 IndexTTS2 代码位于 `tts_service/indextts`（已内置，如需升级可替换该目录）
-- 模型权重通过 HuggingFace 下载到 `tts_service/models/IndexTTS-2` 或容器内 `/app/models/IndexTTS-2`（参考 `docs/startup-guide.md`）
-
-## Moonshine 说明
-
-- ASR 服务基于 Moonshine ONNX（依赖从 https://github.com/moonshine-ai/moonshine 的 `moonshine-onnx` 子目录安装）
-
 ## 致谢
 
-- Moonshine: https://github.com/moonshine-ai/moonshine
-- IndexTTS2（上游参考，可选）: https://github.com/index-tts/index-tts
+本项目使用以下优秀的开源项目和第三方服务：
+
+- **TTS**: [IndexTTS-2](https://github.com/index-tts/index-tts) & [index-tts-vllm](https://github.com/Ksuriuri/index-tts-vllm) - 高质量语音合成
+- **ASR**: [火山引擎语音识别](https://www.volcengine.com/docs/6561/1354868) - 高精度语音识别与说话人分离
+- **翻译**: [智谱 GLM](https://bigmodel.cn/) - 多语言翻译能力
+- **存储**: [阿里云 OSS](https://www.aliyun.com/product/oss) - 对象存储服务

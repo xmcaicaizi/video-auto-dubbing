@@ -849,7 +849,7 @@
         }
 
         // 加载任务列表
-        async function loadTasks() {
+        async function loadTasks(skipAutoRefresh = false) {
             try {
                 const response = await fetch(`${API_BASE}/tasks`);
                 const data = await response.json();
@@ -867,7 +867,7 @@
                         }
                         return task;
                     }));
-                    renderTasks(detailTasks);
+                    renderTasks(detailTasks, skipAutoRefresh);
                 }
             } catch (error) {
                 console.error('加载任务失败:', error);
@@ -875,7 +875,7 @@
         }
 
         // 渲染任务列表
-        function renderTasks(tasks) {
+        function renderTasks(tasks, skipAutoRefresh = false) {
             const tasksList = document.getElementById('tasksList');
 
             if (tasks.length === 0) {
@@ -926,10 +926,24 @@
                 `;
             }).join('');
 
-            // 自动刷新运行中的任务
-            tasks.filter(t => t.status === 'running' || t.status === 'queued').forEach(task => {
-                setTimeout(() => refreshTask(task.task_id), 3000);
-            });
+            // 自动刷新运行中的任务（避免重复设置定时器）
+            if (!skipAutoRefresh) {
+                tasks.filter(t => t.status === 'running' || t.status === 'queued').forEach(task => {
+                    if (!activeRefreshTimers.has(task.task_id)) {
+                        activeRefreshTimers.add(task.task_id);
+                        setTimeout(() => {
+                            activeRefreshTimers.delete(task.task_id);
+                            refreshTask(task.task_id);
+                        }, 3000);
+                    }
+                });
+            }
+        }
+
+        // 更新任务列表中的单个任务（简化版：直接重新加载）
+        function updateTaskInList(updatedTask) {
+            // 简化实现：重新加载任务列表，但不重复设置定时器
+            loadTasks(true);
         }
 
         // 获取状态文本
@@ -953,6 +967,9 @@
             }
         }
 
+        // 存储活动的刷新定时器
+        let activeRefreshTimers = new Set();
+
         // 刷新任务状态
         async function refreshTask(taskId) {
             try {
@@ -960,10 +977,26 @@
                 const data = await response.json();
 
                 if (data.code === 0) {
-                    loadTasks();
+                    // 更新单个任务而不是重新加载所有任务
+                    updateTaskInList(data.data);
+
+                    // 如果任务仍在运行，继续刷新
+                    if (data.data.status === 'running' || data.data.status === 'queued') {
+                        if (!activeRefreshTimers.has(taskId)) {
+                            activeRefreshTimers.add(taskId);
+                            setTimeout(() => {
+                                activeRefreshTimers.delete(taskId);
+                                refreshTask(taskId);
+                            }, 3000);
+                        }
+                    } else {
+                        // 任务完成，停止刷新
+                        activeRefreshTimers.delete(taskId);
+                    }
                 }
             } catch (error) {
                 console.error('刷新任务失败:', error);
+                activeRefreshTimers.delete(taskId);
             }
         }
 

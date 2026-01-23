@@ -330,6 +330,16 @@ func (p *TTSProcessor) processSingleSegment(ctx context.Context, taskID uuid.UUI
 		IndexTTSGradioURL: ttsCfg.gradioURL,
 	}
 
+	// 🔍 调试日志：检查TTS请求参数
+	p.deps.Logger.Info("Building TTS request",
+		zap.String("task_id", taskID.String()),
+		zap.Int("segment_idx", segment.idx),
+		zap.String("speaker_id", segment.speakerID),
+		zap.String("prompt_audio_url", promptInfo.url),
+		zap.Bool("prompt_url_empty", promptInfo.url == ""),
+		zap.String("prompt_key", promptInfo.key),
+	)
+
 	// Get effective configuration and create TTS client
 	effectiveConfig, err := p.deps.ConfigManager.GetEffectiveConfig(ctx, taskID)
 	if err != nil {
@@ -691,6 +701,14 @@ func (p *TTSProcessor) findExistingPrompt(ctx context.Context, taskID uuid.UUID,
 			return promptInfo{}, false, fmt.Errorf("failed to sign existing prompt URL: %w", err)
 		}
 		candidate.url = url
+
+		p.deps.Logger.Info("Found existing prompt audio",
+			zap.String("task_id", taskID.String()),
+			zap.String("speaker_id", speakerID),
+			zap.String("prompt_key", candidate.key),
+			zap.String("prompt_url", url),
+			zap.Bool("url_empty", url == ""),
+		)
 
 		return promptInfo{
 			key: candidate.key,

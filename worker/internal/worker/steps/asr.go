@@ -86,6 +86,12 @@ func (p *ASRProcessor) Process(ctx context.Context, taskID uuid.UUID, msg models
 
 	// Save segments to database (including speaker_id, emotion, gender)
 	for _, seg := range asrResult.Segments {
+		// 🔥 设置默认speaker_id以启用音色克隆
+		speakerID := seg.SpeakerID
+		if speakerID == "" {
+			speakerID = "speaker_1" // 默认说话人，将触发音色克隆
+		}
+
 		query := `
 			INSERT INTO segments (task_id, idx, start_ms, end_ms, duration_ms, src_text,
 			                      speaker_id, emotion, gender, created_at, updated_at)
@@ -99,7 +105,7 @@ func (p *ASRProcessor) Process(ctx context.Context, taskID uuid.UUID, msg models
 		now := time.Now()
 		_, err := p.deps.DB.ExecContext(ctx, query,
 			taskID, seg.Idx, seg.StartMs, seg.EndMs, seg.EndMs-seg.StartMs,
-			seg.Text, seg.SpeakerID, seg.Emotion, seg.Gender, now, now,
+			seg.Text, speakerID, seg.Emotion, seg.Gender, now, now,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to save segment: %w", err)

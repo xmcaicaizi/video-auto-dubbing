@@ -1,3 +1,6 @@
+// Worker客户端的完整修改版本
+// 文件: worker/internal/tts/vllm_client.go
+
 package tts
 
 import (
@@ -32,25 +35,22 @@ func NewVLLMClient(cfg config.TTSConfig, logger *zap.Logger) *VLLMClient {
 		baseURL: cfg.URL,
 		apiKey:  cfg.APIKey,
 		client: &http.Client{
-			Timeout: 600 * time.Second,
+			Timeout: 60 * time.Second, // 增加超时时间，因为音频上传可能较慢
 		},
 		logger: logger,
 	}
 }
 
-// vllmSynthesizeRequest represents the native API request format for index-tts-vllm.
-// Based on common TTS API patterns and the project's design.
-type vllmSynthesizeRequest struct {
-	Text           string   `json:"text"`
-	PromptAudio    string   `json:"prompt_audio,omitempty"`     // Base64 encoded or URL
-	PromptAudioURL string   `json:"prompt_audio_url,omitempty"` // Alternative: URL to prompt audio
-	Speed          float64  `json:"speed,omitempty"`            // Speech speed (default 1.0)
-	OutputFormat   string   `json:"output_format,omitempty"`    // wav, mp3
-	SampleRate     int      `json:"sample_rate,omitempty"`      // Output sample rate
+// SynthesisRequest represents a TTS synthesis request.
+type SynthesisRequest struct {
+	Text           string `json:"text"`
+	SpeakerID      string `json:"speaker_id,omitempty"`
+	PromptAudioURL string `json:"prompt_audio_url,omitempty"` // 🔥 关键：原始音频URL
+	ResponseFormat string `json:"response_format,omitempty"`
+	Speed          float32 `json:"speed,omitempty"`
 }
 
-// indexTTSV2Request represents IndexTTS v2 /tts_url API request format.
-// Reference: api_example_v2.py - Enhanced with voice cloning support
+// Reference: api_example_v2.py - 更新结构体支持音色克隆
 type indexTTSV2Request struct {
 	Text                        string    `json:"text"`
 	SpkAudioPath                string    `json:"spk_audio_path"`                           // Required: speaker reference audio path
@@ -66,6 +66,14 @@ type indexTTSV2Request struct {
 	EmoAlpha                    float64   `json:"emo_alpha,omitempty"`                      // Emotion strength (0.0-1.0)
 }
 
+// 音频上传响应结构
+type audioUploadResponse struct {
+	ServerPath string `json:"server_path"`
+	Filename   string `json:"filename"`
+	Size       int64  `json:"size"`
+	Status     string `json:"status"`
+}
+
 // vllmSynthesizeResponse represents the native API response format.
 type vllmSynthesizeResponse struct {
 	Audio      string `json:"audio,omitempty"`       // Base64 encoded audio
@@ -75,24 +83,7 @@ type vllmSynthesizeResponse struct {
 	Message    string `json:"message,omitempty"`
 }
 
-// audioUploadResponse represents the audio upload response format.
-type audioUploadResponse struct {
-	ServerPath string `json:"server_path"`
-	Filename   string `json:"filename"`
-	Size       int64  `json:"size"`
-	Status     string `json:"status"`
-}
-
-// openAISpeechRequest represents the OpenAI-compatible API request.
-type openAISpeechRequest struct {
-	Model          string  `json:"model"`
-	Input          string  `json:"input"`
-	Voice          string  `json:"voice"`
-	ResponseFormat string  `json:"response_format,omitempty"`
-	Speed          float64 `json:"speed,omitempty"`
-}
-
-// Synthesize generates speech using the index-tts-vllm API with voice cloning support.
+// Synthesize generates speech using the index-tts-vllm API
 func (c *VLLMClient) Synthesize(ctx context.Context, req SynthesisRequest) (io.ReadCloser, error) {
 	c.logger.Info("Starting TTS synthesis with voice cloning",
 		zap.String("text_preview", req.Text[:min(50, len(req.Text))]),
@@ -121,32 +112,6 @@ func (c *VLLMClient) Synthesize(ctx context.Context, req SynthesisRequest) (io.R
 	// 没有原始音频，使用标准TTS
 	c.logger.Info("Using standard TTS (no voice cloning)")
 	return c.tryIndexTTSV2Endpoint(ctx, req)
-}
-
-// synthesizeNative tries the native index-tts-vllm API.
-func (c *VLLMClient) synthesizeNative(ctx context.Context, req SynthesisRequest) (io.ReadCloser, error) {
-	// Try IndexTTS v2 /tts_url endpoint first (most specific)
-	reader, err := c.tryIndexTTSV2Endpoint(ctx, req)
-	if err == nil {
-		return reader, nil
-	}
-	c.logger.Debug("IndexTTS v2 /tts_url failed, trying generic endpoints",
-		zap.Error(err),
-	)
-
-	// Try generic endpoints as fallback
-	endpoints := []string{"/synthesize", "/tts", "/api/synthesize", "/api/tts"}
-
-	var lastErr error
-	for _, endpoint := range endpoints {
-		reader, err := c.tryNativeEndpoint(ctx, endpoint, req)
-		if err == nil {
-			return reader, nil
-		}
-		lastErr = err
-	}
-
-	return nil, fmt.Errorf("native API failed: %w", lastErr)
 }
 
 // 🔥 核心新功能：音色克隆与音频上传
@@ -300,7 +265,7 @@ func (c *VLLMClient) tryVoiceCloningEndpoint(ctx context.Context, req indexTTSV2
 	return resp.Body, nil
 }
 
-// tryIndexTTSV2Endpoint attempts the IndexTTS v2 /tts_url endpoint (fallback mode).
+// 降级到原有的IndexTTS v2接口
 func (c *VLLMClient) tryIndexTTSV2Endpoint(ctx context.Context, req SynthesisRequest) (io.ReadCloser, error) {
 	// 使用预设音色
 	spkAudioPath := c.getFallbackSpeaker(req.SpeakerID)
@@ -325,252 +290,23 @@ func (c *VLLMClient) tryIndexTTSV2Endpoint(ctx context.Context, req SynthesisReq
 
 	c.setHeaders(httpReq)
 
-	c.logger.Debug("Trying IndexTTS v2 /tts_url",
+	c.logger.Debug("Trying IndexTTS v2 /tts_url (fallback)",
 		zap.String("url", url),
-		zap.String("speaker", req.SpeakerID),
-		zap.String("spk_path", spkAudioPath),
-		zap.Int("text_len", len(req.Text)),
-	)
+		zap.String("spk_audio_path", spkAudioPath))
 
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-
-	if resp.StatusCode == http.StatusNotFound {
-		resp.Body.Close()
-		return nil, fmt.Errorf("endpoint /tts_url not found")
+		return nil, fmt.Errorf("IndexTTS v2 request failed: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
 		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("IndexTTS v2 returned status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// IndexTTS v2 /tts_url returns audio/wav directly
-	contentType := resp.Header.Get("Content-Type")
-	if isAudioContentType(contentType) {
-		c.logger.Info("IndexTTS v2 /tts_url success",
-			zap.String("content_type", contentType),
-		)
-		return resp.Body, nil
-	}
-
-	// Unexpected response format
-	resp.Body.Close()
-	return nil, fmt.Errorf("unexpected content type: %s", contentType)
-}
-
-// tryNativeEndpoint attempts a single native API endpoint.
-func (c *VLLMClient) tryNativeEndpoint(ctx context.Context, endpoint string, req SynthesisRequest) (io.ReadCloser, error) {
-	// Calculate speed from prosody control
-	speed := 1.0
-	if req.ProsodyControl != nil {
-		if s, ok := req.ProsodyControl["speed"].(float64); ok {
-			speed = s
-		}
-	}
-
-	nativeReq := vllmSynthesizeRequest{
-		Text:           req.Text,
-		PromptAudioURL: req.PromptAudioURL,
-		Speed:          speed,
-		OutputFormat:   req.OutputFormat,
-		SampleRate:     req.SampleRate,
-	}
-
-	bodyBytes, err := json.Marshal(nativeReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	url := fmt.Sprintf("%s%s", c.baseURL, endpoint)
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	c.setHeaders(httpReq)
-
-	resp, err := c.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-
-	if resp.StatusCode == http.StatusNotFound {
-		resp.Body.Close()
-		return nil, fmt.Errorf("endpoint not found: %s", endpoint)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// Check content type to determine response format
-	contentType := resp.Header.Get("Content-Type")
-
-	// If response is audio directly
-	if isAudioContentType(contentType) {
-		return resp.Body, nil
-	}
-
-	// If response is JSON, parse it
-	var apiResp vllmSynthesizeResponse
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-		resp.Body.Close()
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-	resp.Body.Close()
-
-	// If response contains base64 audio
-	if apiResp.Audio != "" {
-		audioData, err := base64.StdEncoding.DecodeString(apiResp.Audio)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode base64 audio: %w", err)
-		}
-		return io.NopCloser(bytes.NewReader(audioData)), nil
-	}
-
-	// If response contains audio URL
-	if apiResp.AudioURL != "" {
-		return c.downloadAudio(ctx, apiResp.AudioURL)
-	}
-
-	return nil, fmt.Errorf("no audio in response")
-}
-
-// synthesizeOpenAI uses the OpenAI-compatible /audio/speech endpoint.
-func (c *VLLMClient) synthesizeOpenAI(ctx context.Context, req SynthesisRequest) (io.ReadCloser, error) {
-	// Try multiple possible endpoints
-	endpoints := []string{"/audio/speech", "/v1/audio/speech"}
-
-	var lastErr error
-	for _, endpoint := range endpoints {
-		reader, err := c.tryOpenAIEndpoint(ctx, endpoint, req)
-		if err == nil {
-			return reader, nil
-		}
-		lastErr = err
-	}
-
-	return nil, fmt.Errorf("OpenAI API failed: %w", lastErr)
-}
-
-// tryOpenAIEndpoint attempts a single OpenAI-compatible endpoint.
-func (c *VLLMClient) tryOpenAIEndpoint(ctx context.Context, endpoint string, req SynthesisRequest) (io.ReadCloser, error) {
-	speed := 1.0
-	if req.ProsodyControl != nil {
-		if s, ok := req.ProsodyControl["speed"].(float64); ok {
-			speed = s
-		}
-	}
-
-	voice := req.SpeakerID
-	if voice == "" {
-		voice = "default"
-	}
-
-	format := req.OutputFormat
-	if format == "" {
-		format = "wav"
-	}
-
-	openAIReq := openAISpeechRequest{
-		Model:          "index-tts-v2",
-		Input:          req.Text,
-		Voice:          voice,
-		ResponseFormat: format,
-		Speed:          speed,
-	}
-
-	bodyBytes, err := json.Marshal(openAIReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	url := fmt.Sprintf("%s%s", c.baseURL, endpoint)
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	c.setHeaders(httpReq)
-	// OpenAI API typically expects audio response directly
-	httpReq.Header.Set("Accept", "audio/wav, audio/mpeg, audio/*")
-
-	resp, err := c.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-
-	if resp.StatusCode == http.StatusNotFound {
-		resp.Body.Close()
-		return nil, fmt.Errorf("endpoint not found: %s", endpoint)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// OpenAI /audio/speech returns audio stream directly
+	c.logger.Info("IndexTTS v2 /tts_url fallback success")
 	return resp.Body, nil
-}
-
-// setHeaders sets common request headers.
-func (c *VLLMClient) setHeaders(req *http.Request) {
-	req.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
-		req.Header.Set("X-Api-Key", c.apiKey)
-	}
-}
-
-// downloadAudio downloads audio from a URL.
-func (c *VLLMClient) downloadAudio(ctx context.Context, audioURL string) (io.ReadCloser, error) {
-	// Handle relative URLs
-	if len(audioURL) > 0 && audioURL[0] == '/' {
-		audioURL = c.baseURL + audioURL
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "GET", audioURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create audio request: %w", err)
-	}
-
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
-	}
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to download audio: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
-		return nil, fmt.Errorf("failed to download audio: status %d", resp.StatusCode)
-	}
-
-	return resp.Body, nil
-}
-
-// isAudioContentType checks if the content type indicates audio.
-func isAudioContentType(contentType string) bool {
-	audioTypes := []string{
-		"audio/",
-		"application/octet-stream",
-	}
-	for _, t := range audioTypes {
-		if len(contentType) >= len(t) && contentType[:len(t)] == t {
-			return true
-		}
-	}
-	return false
 }
 
 // 智能预设音色选择
@@ -591,6 +327,14 @@ func (c *VLLMClient) getFallbackSpeaker(speakerID string) string {
 		return path
 	}
 	return speakerMapping["default"]
+}
+
+// 设置HTTP请求头
+func (c *VLLMClient) setHeaders(req *http.Request) {
+	req.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
+	}
 }
 
 // 工具函数：返回较小值

@@ -7,9 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
-	"path/filepath"
 	"time"
 
 	"vedio/shared/config"
@@ -50,7 +48,7 @@ type vllmSynthesizeRequest struct {
 }
 
 // indexTTSV2Request represents IndexTTS v2 /tts_url API request format.
-// Reference: api_example_v2.py - Enhanced with voice cloning support
+// Reference: api_example_v2.py
 type indexTTSV2Request struct {
 	Text                        string    `json:"text"`
 	SpkAudioPath                string    `json:"spk_audio_path"`                           // Required: speaker reference audio path
@@ -61,9 +59,6 @@ type indexTTSV2Request struct {
 	EmoText                     string    `json:"emo_text,omitempty"`                       // Emotion description text
 	EmoRandom                   bool      `json:"emo_random,omitempty"`                     // Random emotion
 	MaxTextTokensPerSentence    int       `json:"max_text_tokens_per_sentence,omitempty"`   // Default 120
-	// 🔥 新增：支持独立的情感音频路径和情感强度
-	EmoAudioPath                *string   `json:"emo_audio_path,omitempty"`                 // Optional: separate emotion audio path
-	EmoAlpha                    float64   `json:"emo_alpha,omitempty"`                      // Emotion strength (0.0-1.0)
 }
 
 // vllmSynthesizeResponse represents the native API response format.
@@ -75,14 +70,6 @@ type vllmSynthesizeResponse struct {
 	Message    string `json:"message,omitempty"`
 }
 
-// audioUploadResponse represents the audio upload response format.
-type audioUploadResponse struct {
-	ServerPath string `json:"server_path"`
-	Filename   string `json:"filename"`
-	Size       int64  `json:"size"`
-	Status     string `json:"status"`
-}
-
 // openAISpeechRequest represents the OpenAI-compatible API request.
 type openAISpeechRequest struct {
 	Model          string  `json:"model"`
@@ -92,35 +79,28 @@ type openAISpeechRequest struct {
 	Speed          float64 `json:"speed,omitempty"`
 }
 
-// Synthesize generates speech using the index-tts-vllm API with voice cloning support.
+// Synthesize performs TTS synthesis using index-tts-vllm.
+// It tries multiple API formats in order of preference:
+// 1. Native /synthesize or /tts endpoint
+// 2. OpenAI-compatible /audio/speech endpoint
+// 3. /v1/audio/speech endpoint
 func (c *VLLMClient) Synthesize(ctx context.Context, req SynthesisRequest) (io.ReadCloser, error) {
-	c.logger.Info("Starting TTS synthesis with voice cloning",
-		zap.String("text_preview", req.Text[:min(50, len(req.Text))]),
-		zap.String("speaker_id", req.SpeakerID),
-		zap.String("prompt_audio_url", req.PromptAudioURL),
+	// Try native API first
+	reader, err := c.synthesizeNative(ctx, req)
+	if err == nil {
+		return reader, nil
+	}
+	c.logger.Debug("Native API failed, trying OpenAI-compatible API",
+		zap.Error(err),
 	)
 
-	// 🔥 优先尝试增强的音色克隆接口
-	if req.PromptAudioURL != "" {
-		c.logger.Info("Attempting voice cloning with original audio",
-			zap.String("audio_url", req.PromptAudioURL))
-
-		audioResp, err := c.tryVoiceCloningWithUpload(ctx, req)
-		if err != nil {
-			c.logger.Warn("Voice cloning failed, falling back to standard TTS",
-				zap.Error(err),
-				zap.String("fallback_speaker", req.SpeakerID))
-			// 降级到标准TTS
-			return c.tryIndexTTSV2Endpoint(ctx, req)
-		}
-
-		c.logger.Info("Voice cloning synthesis successful")
-		return audioResp, nil
+	// Fallback to OpenAI-compatible API
+	reader, err = c.synthesizeOpenAI(ctx, req)
+	if err == nil {
+		return reader, nil
 	}
 
-	// 没有原始音频，使用标准TTS
-	c.logger.Info("Using standard TTS (no voice cloning)")
-	return c.tryIndexTTSV2Endpoint(ctx, req)
+	return nil, fmt.Errorf("all TTS API attempts failed: %w", err)
 }
 
 // synthesizeNative tries the native index-tts-vllm API.
@@ -149,166 +129,36 @@ func (c *VLLMClient) synthesizeNative(ctx context.Context, req SynthesisRequest)
 	return nil, fmt.Errorf("native API failed: %w", lastErr)
 }
 
-// 🔥 核心新功能：音色克隆与音频上传
-func (c *VLLMClient) tryVoiceCloningWithUpload(ctx context.Context, req SynthesisRequest) (io.ReadCloser, error) {
-	// 步骤1：上传原始音频
-	serverPath, err := c.uploadPromptAudio(ctx, req.PromptAudioURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to upload prompt audio: %w", err)
-	}
-
-	c.logger.Info("Audio uploaded successfully, starting voice cloning synthesis",
-		zap.String("server_path", serverPath))
-
-	// 步骤2：使用上传的音频进行音色克隆
-	return c.executeVoiceCloningRequest(ctx, req, serverPath)
-}
-
-// 上传音频到TTS服务器
-func (c *VLLMClient) uploadPromptAudio(ctx context.Context, audioURL string) (string, error) {
-	c.logger.Debug("Starting audio upload", zap.String("url", audioURL))
-
-	// 1. 下载原音频文件
-	resp, err := http.Get(audioURL)
-	if err != nil {
-		return "", fmt.Errorf("failed to download audio from %s: %w", audioURL, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to download audio, status: %d", resp.StatusCode)
-	}
-
-	// 2. 准备multipart上传
-	var buf bytes.Buffer
-	writer := multipart.NewWriter(&buf)
-
-	// 从URL中提取文件名，或使用默认名称
-	filename := "prompt.wav"
-	if parsedName := filepath.Base(audioURL); parsedName != "" && parsedName != "/" && parsedName != "." {
-		filename = parsedName
-	}
-
-	part, err := writer.CreateFormFile("file", filename)
-	if err != nil {
-		return "", fmt.Errorf("failed to create form file: %w", err)
-	}
-
-	// 复制音频数据
-	copySize, err := io.Copy(part, resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to copy audio data: %w", err)
-	}
-
-	if err := writer.Close(); err != nil {
-		return "", fmt.Errorf("failed to close multipart writer: %w", err)
-	}
-
-	c.logger.Debug("Audio data prepared for upload",
-		zap.Int64("size", copySize),
-		zap.String("filename", filename))
-
-	// 3. 上传到TTS服务器
-	uploadURL := fmt.Sprintf("%s/upload_audio", c.baseURL)
-	uploadReq, err := http.NewRequestWithContext(ctx, "POST", uploadURL, &buf)
-	if err != nil {
-		return "", fmt.Errorf("failed to create upload request: %w", err)
-	}
-
-	uploadReq.Header.Set("Content-Type", writer.FormDataContentType())
-
-	// 设置较长的超时时间
-	uploadClient := &http.Client{Timeout: 60 * time.Second}
-	httpResp, err := uploadClient.Do(uploadReq)
-	if err != nil {
-		return "", fmt.Errorf("failed to upload audio: %w", err)
-	}
-	defer httpResp.Body.Close()
-
-	// 4. 处理上传响应
-	if httpResp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(httpResp.Body)
-		return "", fmt.Errorf("upload failed with status %d: %s", httpResp.StatusCode, string(body))
-	}
-
-	var result audioUploadResponse
-	if err := json.NewDecoder(httpResp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("failed to decode upload response: %w", err)
-	}
-
-	if result.Status != "success" {
-		return "", fmt.Errorf("upload unsuccessful: %s", result.Status)
-	}
-
-	c.logger.Info("Audio uploaded successfully",
-		zap.String("server_path", result.ServerPath),
-		zap.String("filename", result.Filename),
-		zap.Int64("size", result.Size),
-	)
-
-	return result.ServerPath, nil
-}
-
-// 执行音色克隆请求
-func (c *VLLMClient) executeVoiceCloningRequest(ctx context.Context, req SynthesisRequest, serverPath string) (io.ReadCloser, error) {
-	// 构建音色克隆请求
-	v2Req := indexTTSV2Request{
-		Text:                     req.Text,
-		SpkAudioPath:             serverPath,        // 音色参考
-		MaxTextTokensPerSentence: 120,
-		EmoAudioPath:             &serverPath,       // 🔥 情感参考（同一文件）
-		EmoAlpha:                 0.8,               // 🔥 情感强度
-	}
-
-	// 优先尝试增强的音色克隆接口
-	return c.tryVoiceCloningEndpoint(ctx, v2Req)
-}
-
-// 尝试新的音色克隆接口
-func (c *VLLMClient) tryVoiceCloningEndpoint(ctx context.Context, req indexTTSV2Request) (io.ReadCloser, error) {
-	bodyBytes, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal voice cloning request: %w", err)
-	}
-
-	url := fmt.Sprintf("%s/tts_url_with_cloning", c.baseURL)
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create voice cloning request: %w", err)
-	}
-
-	c.setHeaders(httpReq)
-
-	c.logger.Debug("Calling voice cloning endpoint",
-		zap.String("url", url),
-		zap.String("spk_audio_path", req.SpkAudioPath),
-		zap.String("emo_audio_path", *req.EmoAudioPath),
-		zap.Float64("emo_alpha", req.EmoAlpha))
-
-	resp, err := c.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("voice cloning request failed: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("voice cloning endpoint returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	c.logger.Info("Voice cloning endpoint success")
-	return resp.Body, nil
-}
-
-// tryIndexTTSV2Endpoint attempts the IndexTTS v2 /tts_url endpoint (fallback mode).
+// tryIndexTTSV2Endpoint attempts the IndexTTS v2 /tts_url endpoint.
 func (c *VLLMClient) tryIndexTTSV2Endpoint(ctx context.Context, req SynthesisRequest) (io.ReadCloser, error) {
-	// 使用预设音色
-	spkAudioPath := c.getFallbackSpeaker(req.SpeakerID)
+	// IndexTTS v2 requires spk_audio_path (server-local file path)
+	// Since we use PromptAudioURL (MinIO/OSS URL), we need a mapping strategy
 
+	// Strategy: Use predefined speaker voices on the remote server
+	// Map speaker_id to server-local reference audio paths
+	speakerMapping := map[string]string{
+		"default":   "/root/index-tts-vllm/examples/voice_01.wav",
+		"speaker_1": "/root/index-tts-vllm/examples/voice_01.wav",
+		"speaker_2": "/root/index-tts-vllm/examples/voice_02.wav",
+		"speaker_3": "/root/index-tts-vllm/examples/voice_03.wav",
+		"speaker_4": "/root/index-tts-vllm/examples/voice_04.wav",
+		"speaker_5": "/root/index-tts-vllm/examples/voice_05.wav",
+		"male_1":    "/root/index-tts-vllm/examples/voice_01.wav",
+		"male_2":    "/root/index-tts-vllm/examples/voice_04.wav",
+		"female_1":  "/root/index-tts-vllm/examples/voice_02.wav",
+		"female_2":  "/root/index-tts-vllm/examples/voice_05.wav",
+	}
+
+	spkAudioPath := speakerMapping[req.SpeakerID]
+	if spkAudioPath == "" {
+		spkAudioPath = speakerMapping["default"]
+	}
+
+	// Build IndexTTS v2 request
 	v2Req := indexTTSV2Request{
 		Text:                     req.Text,
 		SpkAudioPath:             spkAudioPath,
-		EmoControlMethod:         0, // 情感与音色参考音频相同
+		EmoControlMethod:         0, // 0 = use speaker audio for emotion too
 		MaxTextTokensPerSentence: 120,
 	}
 
@@ -571,32 +421,4 @@ func isAudioContentType(contentType string) bool {
 		}
 	}
 	return false
-}
-
-// 智能预设音色选择
-func (c *VLLMClient) getFallbackSpeaker(speakerID string) string {
-	// 🔧 根据你的实际路径调整
-	speakerMapping := map[string]string{
-		"default":      "/root/index-tts-vllm/examples/voice_01.wav",
-		"male_young":   "/root/index-tts-vllm/examples/voice_01.wav",
-		"female_young": "/root/index-tts-vllm/examples/voice_01.wav", // 你可以调整为voice_02.wav
-		"male_mature":  "/root/index-tts-vllm/examples/voice_01.wav",
-		"female_mature": "/root/index-tts-vllm/examples/voice_01.wav",
-		"speaker_1":    "/root/index-tts-vllm/examples/voice_01.wav",
-		"speaker_2":    "/root/index-tts-vllm/examples/voice_01.wav",
-		"speaker_3":    "/root/index-tts-vllm/examples/voice_01.wav",
-	}
-
-	if path, exists := speakerMapping[speakerID]; exists {
-		return path
-	}
-	return speakerMapping["default"]
-}
-
-// 工具函数：返回较小值
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

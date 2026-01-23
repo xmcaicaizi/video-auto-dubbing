@@ -298,6 +298,17 @@ func (c *VolcengineClient) queryTask(ctx context.Context, requestID string) (*mo
 func (c *VolcengineClient) convertToASRResult(resp *queryResponse) *models.ASRResult {
 	segments := make([]models.ASRSegment, 0, len(resp.Result.Utterances))
 
+	// 🔍 调试日志：检查火山引擎返回的说话人信息
+	speakerCount := 0
+	for _, utt := range resp.Result.Utterances {
+		if utt.Additions != nil && utt.Additions.SpeakerID != "" {
+			speakerCount++
+		}
+	}
+	c.logger.Info("Volcengine ASR speaker info analysis",
+		zap.Int("total_utterances", len(resp.Result.Utterances)),
+		zap.Int("with_speaker_id", speakerCount))
+
 	for idx, utt := range resp.Result.Utterances {
 		seg := models.ASRSegment{
 			Idx:     idx,
@@ -310,6 +321,11 @@ func (c *VolcengineClient) convertToASRResult(resp *queryResponse) *models.ASRRe
 			seg.SpeakerID = utt.Additions.SpeakerID
 			seg.Emotion = utt.Additions.Emotion
 			seg.Gender = utt.Additions.Gender
+		}
+
+		// 🔥 确保总是有说话人ID以启用音色克隆功能
+		if seg.SpeakerID == "" {
+			seg.SpeakerID = "speaker_1" // 默认说话人，将触发音色克隆
 		}
 
 		segments = append(segments, seg)

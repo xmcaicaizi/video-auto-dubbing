@@ -63,8 +63,19 @@ func (p *TranslateProcessor) Process(ctx context.Context, taskID uuid.UUID, msg 
 		return fmt.Errorf("translate configuration validation failed: %w", err)
 	}
 
-	// Create translate client with effective configuration
-	transClient := translate.NewClient(effectiveConfig.External.GLM, p.deps.Logger)
+	// Determine translation provider from database settings or default to DashScope
+	provider := translate.ProviderDashScope // Default to DashScope
+	if dbSettings, err := p.deps.SettingsLoader.Load(ctx); err == nil {
+		if dbSettings.Translate.Provider != "" {
+			provider = translate.ProviderType(dbSettings.Translate.Provider)
+		}
+	}
+
+	// Create translate client using factory
+	transClient, err := translate.NewTranslator(provider, effectiveConfig, p.deps.Logger)
+	if err != nil {
+		return fmt.Errorf("failed to create translator: %w", err)
+	}
 
 	if err := p.translateBatches(ctx, taskID, payload, segments, transClient, effectiveConfig); err != nil {
 		return err

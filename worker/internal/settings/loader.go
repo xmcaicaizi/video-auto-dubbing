@@ -65,9 +65,13 @@ type TTSSettings struct {
 
 // TranslateSettings holds translation configuration from database.
 type TranslateSettings struct {
-	GLMAPIKey string
-	GLMAPIURL string
-	GLMModel  string
+	Provider           string // Translation provider: "glm" or "dashscope"
+	GLMAPIKey          string
+	GLMAPIURL          string
+	GLMModel           string
+	DashScopeAPIKey    string
+	DashScopeBaseURL   string
+	DashScopeModel     string
 }
 
 // Load reads all settings from the database.
@@ -92,8 +96,11 @@ func (l *Loader) Load(ctx context.Context) (*Settings, error) {
 			Backend: "vllm",
 		},
 		Translate: TranslateSettings{
-			GLMAPIURL: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
-			GLMModel:  "glm-4-flash",
+			Provider:         "dashscope", // Default to DashScope (Aliyun Bailian)
+			GLMAPIURL:        "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+			GLMModel:         "glm-4-flash",
+			DashScopeBaseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+			DashScopeModel:   "qwen-turbo",
 		},
 		Storage: StorageSettings{
 			Backend:   "minio",
@@ -164,12 +171,20 @@ func applyValue(s *Settings, category, key, value string) {
 		}
 	case "translate":
 		switch key {
+		case "provider":
+			s.Translate.Provider = value
 		case "glm_api_key":
 			s.Translate.GLMAPIKey = value
 		case "glm_api_url":
 			s.Translate.GLMAPIURL = value
 		case "glm_model":
 			s.Translate.GLMModel = value
+		case "dashscope_api_key":
+			s.Translate.DashScopeAPIKey = value
+		case "dashscope_base_url":
+			s.Translate.DashScopeBaseURL = value
+		case "dashscope_model":
+			s.Translate.DashScopeModel = value
 		}
 	}
 }
@@ -239,6 +254,16 @@ func (s *Settings) MergeIntoConfig(cfg *sharedconfig.BaseConfig) {
 	if s.Translate.GLMModel != "" {
 		cfg.External.GLM.Model = s.Translate.GLMModel
 	}
+	// Merge DashScope LLM settings
+	if s.Translate.DashScopeAPIKey != "" {
+		cfg.External.DashScope.APIKey = s.Translate.DashScopeAPIKey
+	}
+	if s.Translate.DashScopeBaseURL != "" {
+		cfg.External.DashScope.BaseURL = s.Translate.DashScopeBaseURL
+	}
+	if s.Translate.DashScopeModel != "" {
+		cfg.External.DashScope.Model = s.Translate.DashScopeModel
+	}
 }
 
 // HasValidASRConfig returns true if ASR configuration is complete.
@@ -253,7 +278,19 @@ func (s *Settings) HasValidTTSConfig() bool {
 
 // HasValidTranslateConfig returns true if translation configuration is complete.
 func (s *Settings) HasValidTranslateConfig() bool {
-	return s.Translate.GLMAPIKey != ""
+	provider := s.Translate.Provider
+	if provider == "" {
+		provider = "dashscope" // Default provider
+	}
+
+	switch provider {
+	case "dashscope":
+		return s.Translate.DashScopeAPIKey != ""
+	case "glm":
+		return s.Translate.GLMAPIKey != ""
+	default:
+		return false
+	}
 }
 
 // HasValidStorageConfig returns true if storage config is complete.

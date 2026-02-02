@@ -176,3 +176,11 @@ func ValidateGLMConfig(cfg *sharedconfig.BaseConfig) error {
 	}
 	return nil
 }
+
+// ValidateDashScopeConfig validates that DashScope LLM API is configured.
+func ValidateDashScopeConfig(cfg *sharedconfig.BaseConfig) error {
+	if cfg.External.DashScope.APIKey == "" {
+		return fmt.Errorf("DASHSCOPE_LLM_API_KEY is required (configure via settings or environment)")
+	}
+	return nil
+}

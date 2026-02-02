@@ -65,8 +65,18 @@ func (c *EffectiveConfig) ValidateForTTS() error {
 }
 
 // ValidateForTranslate validates that translation configuration is complete.
+// Note: This is now handled by the translator factory, but we keep this
+// for backward compatibility. The factory will validate the specific provider.
 func (c *EffectiveConfig) ValidateForTranslate() error {
-	return ValidateGLMConfig(&c.BaseConfig)
+	// Check if either GLM or DashScope is configured
+	hasGLM := c.External.GLM.APIKey != ""
+	hasDashScope := c.External.DashScope.APIKey != ""
+
+	if !hasGLM && !hasDashScope {
+		return fmt.Errorf("translation provider not configured: either GLM_API_KEY or DASHSCOPE_LLM_API_KEY is required")
+	}
+
+	return nil
 }
 
 // TaskOverrides represents per-task configuration overrides.

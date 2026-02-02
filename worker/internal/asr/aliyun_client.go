@@ -16,17 +16,21 @@ import (
 )
 
 const (
-	// 阿里云百炼平台 DashScope ASR API 端点（中国大陆）
-	aliyunASREndpoint = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+	// 阿里云百炼平台 DashScope ASR 异步API 端点（中国大陆）
+	aliyunASRSubmitURL = "https://dashscope.aliyuncs.com/api/v1/services/audio/asr/transcription"
+	aliyunASRQueryURL  = "https://dashscope.aliyuncs.com/api/v1/tasks"
 )
 
 // AliyunASRConfig holds Aliyun DashScope ASR configuration.
 type AliyunASRConfig struct {
-	APIKey          string // DashScope API Key
-	Model           string // 模型名称，默认使用 qwen3-asr-flash
-	EnableITN       bool   // 启用文本规范化（仅支持中英文）
-	Language        string // 语言代码（可选）：zh, en, yue, ja 等
-	RequestTimeout  int    // 请求超时时间（秒），默认 60 秒
+	APIKey              string // DashScope API Key
+	Model               string // 模型名称，默认 qwen3-asr-flash-filetrans
+	EnableITN           bool   // 启用文本规范化（仅支持中英文）
+	EnableWords         bool   // 启用词级时间戳
+	Language            string // 语言代码（可选）：zh, en, yue, ja 等
+	RequestTimeout      int    // 单次请求超时时间（秒）
+	PollIntervalSeconds int    // 轮询间隔（秒）
+	PollTimeoutSeconds  int    // 轮询总超时（秒）
 }
 
 // AliyunClient handles ASR API calls to Aliyun DashScope service.
@@ -40,7 +44,18 @@ type AliyunClient struct {
 func NewAliyunClient(cfg AliyunASRConfig, logger *zap.Logger) *AliyunClient {
 	timeout := time.Duration(cfg.RequestTimeout) * time.Second
 	if timeout <= 0 {
-		timeout = 60 * time.Second
+		timeout = 30 * time.Second
+	}
+
+	// 设置默认值
+	if cfg.PollIntervalSeconds <= 0 {
+		cfg.PollIntervalSeconds = 2
+	}
+	if cfg.PollTimeoutSeconds <= 0 {
+		cfg.PollTimeoutSeconds = 900 // 15分钟
+	}
+	if cfg.Model == "" {
+		cfg.Model = "qwen3-asr-flash-filetrans"
 	}
 
 	return &AliyunClient{

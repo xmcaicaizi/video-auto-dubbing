@@ -51,10 +51,9 @@ app.add_middleware(
 
 
 # ==================== 路由注册 ====================
-# TODO: 注册 API 路由
-# from app.api import tasks, settings as settings_api
-# app.include_router(tasks.router, prefix=settings.api_prefix, tags=["tasks"])
-# app.include_router(settings_api.router, prefix=settings.api_prefix, tags=["settings"])
+from app.api import tasks_router
+
+app.include_router(tasks_router, prefix=settings.api_prefix)
 
 
 # ==================== 基础路由 ====================

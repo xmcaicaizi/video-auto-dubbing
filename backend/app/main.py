@@ -52,8 +52,10 @@ app.add_middleware(
 
 # ==================== 路由注册 ====================
 from app.api import tasks_router
+from app.api.monitoring import router as monitoring_router
 
 app.include_router(tasks_router, prefix=settings.api_prefix)
+app.include_router(monitoring_router, prefix=settings.api_prefix)
 
 
 # ==================== 基础路由 ====================

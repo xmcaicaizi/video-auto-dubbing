@@ -69,13 +69,16 @@ async def create_task(
         await task_service.db.commit()
         await task_service.db.refresh(task)
 
-        # TODO: 提交 Celery 任务
-        # from workers.tasks import process_video_task
-        # celery_task = process_video_task.delay(str(task.id))
-        # task.celery_task_id = celery_task.id
-        # await task_service.db.commit()
+        # 提交 Celery 任务
+        from app.workers.tasks import process_video_pipeline
 
-        logger.info(f"Task created successfully: id={task.id}")
+        celery_task = process_video_pipeline.delay(str(task.id))
+        task.celery_task_id = celery_task.id
+        await task_service.db.commit()
+
+        logger.info(
+            f"Task created and queued: id={task.id}, celery_task_id={celery_task.id}"
+        )
 
         return TaskResponse.model_validate(task)
 

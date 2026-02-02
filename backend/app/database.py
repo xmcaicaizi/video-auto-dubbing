@@ -99,3 +99,23 @@ async def init_db() -> None:
 async def close_db() -> None:
     """关闭数据库连接"""
     await async_engine.dispose()
+
+
+@asynccontextmanager
+async def get_db_context() -> AsyncGenerator[AsyncSession, None]:
+    """
+    异步上下文管理器：用于 Celery 任务中获取数据库会话
+
+    Usage:
+        async with get_db_context() as db:
+            # 操作数据库
+            await db.commit()
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()

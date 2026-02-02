@@ -90,8 +90,15 @@ class Settings(BaseSettings):
     llm_max_tokens: int = Field(default=2000, alias="LLM_MAX_TOKENS")
 
     # TTS 配置
-    tts_model: str = Field(default="cosyvoice-v1", alias="TTS_MODEL")
-    tts_voice: str = Field(default="longxiaochun", alias="TTS_VOICE")
+    tts_model: Literal[
+        "cosyvoice-v1",  # 系统音色模式
+        "qwen3-tts-vc-realtime-2026-01-15",  # 声音复刻模式
+    ] = Field(default="cosyvoice-v1", alias="TTS_MODEL")
+    tts_voice: str = Field(
+        default="longxiaochun",
+        alias="TTS_VOICE",
+        description="音色名称（系统音色）或 voice_id（复刻音色，如 vc_xxx）",
+    )
     tts_format: str = Field(default="mp3", alias="TTS_FORMAT")
 
     # ==================== 处理配置 ====================

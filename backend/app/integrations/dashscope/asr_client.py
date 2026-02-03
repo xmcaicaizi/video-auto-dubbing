@@ -128,6 +128,8 @@ class ASRClient:
                 model=self.model,
                 file_urls=[audio_url],
                 language_hints=self.language_hints,
+                enable_speaker_diarization=True,  # 启用说话人分离
+                disfluency_removal_enabled=True,  # 启用语气词过滤
             )
 
             if response.status_code != 200:

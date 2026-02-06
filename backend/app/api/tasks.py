@@ -28,6 +28,7 @@ async def create_task(
     source_language: str = Form(..., description="源语言代码，如 zh, en"),
     target_language: str = Form(..., description="目标语言代码"),
     title: Optional[str] = Form(None, description="任务标题"),
+    subtitle_mode: str = Form("external", description="字幕模式: none/external/burn"),
     task_service: TaskService = Depends(get_task_service),
     storage_service: StorageService = Depends(get_storage_service),
 ):
@@ -38,6 +39,10 @@ async def create_task(
     - **source_language**: 源语言代码（必需）
     - **target_language**: 目标语言代码（必需）
     - **title**: 任务标题（可选）
+    - **subtitle_mode**: 字幕模式（可选，默认 external）
+        - none: 不生成字幕
+        - external: 生成外挂字幕文件（默认）
+        - burn: 将字幕烧录到视频中
     """
     # 验证文件
     if not video.filename:
@@ -50,12 +55,23 @@ async def create_task(
     if target_language not in valid_languages:
         raise HTTPException(status_code=400, detail=f"Invalid target_language: {target_language}")
 
+    # 验证字幕模式
+    from app.models import SubtitleMode
+    try:
+        subtitle_mode_enum = SubtitleMode(subtitle_mode)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid subtitle_mode: {subtitle_mode}. Must be one of: none, external, burn"
+        )
+
     try:
         # 创建任务记录
         task_data = TaskCreate(
             title=title or video.filename,
             source_language=source_language,
             target_language=target_language,
+            subtitle_mode=subtitle_mode_enum,
         )
         task = await task_service.create_task(task_data)
 
@@ -201,4 +217,47 @@ async def get_task_result(
     # 生成下载链接（1 小时有效）
     download_url = storage_service.get_download_url(task.output_video_path, expires=3600)
 
-    return {"download_url": download_url, "expires_in": 3600}
+    # 包含字幕下载链接（如果有）
+    result = {"download_url": download_url, "expires_in": 3600}
+
+    if task.subtitle_file_path:
+        subtitle_url = storage_service.get_download_url(task.subtitle_file_path, expires=3600)
+        result["subtitle_url"] = subtitle_url
+
+    return result
+
+
+@router.get("/{task_id}/subtitle")
+async def get_task_subtitle(
+    task_id: UUID,
+    task_service: TaskService = Depends(get_task_service),
+    storage_service: StorageService = Depends(get_storage_service),
+):
+    """
+    获取字幕文件下载链接
+
+    - **task_id**: 任务 ID
+
+    Returns:
+        {
+            "subtitle_url": "https://...",
+            "expires_in": 3600
+        }
+    """
+    task = await task_service.get_task(task_id)
+
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    if task.status != TaskStatus.COMPLETED:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Task not completed yet. Current status: {task.status.value}",
+        )
+
+    if not task.subtitle_file_path:
+        raise HTTPException(status_code=404, detail="No subtitle file for this task")
+
+    subtitle_url = storage_service.get_download_url(task.subtitle_file_path, expires=3600)
+
+    return {"subtitle_url": subtitle_url, "expires_in": 3600}

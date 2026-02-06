@@ -8,7 +8,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, ConfigDict
 
-from app.models.task import TaskStatus
+from app.models.task import TaskStatus, SubtitleMode
 from .segment import SegmentResponse
 
 
@@ -23,7 +23,10 @@ class TaskBase(BaseModel):
 class TaskCreate(TaskBase):
     """创建任务请求"""
 
-    pass
+    subtitle_mode: SubtitleMode = Field(
+        default=SubtitleMode.EXTERNAL,
+        description="字幕模式: none=不生成, external=外挂字幕文件(默认), burn=烧录到视频"
+    )
 
 
 class TaskUpdate(BaseModel):
@@ -43,6 +46,7 @@ class TaskResponse(TaskBase):
 
     id: UUID
     status: TaskStatus
+    subtitle_mode: SubtitleMode = Field(default=SubtitleMode.EXTERNAL, description="字幕模式")
     progress: int = Field(..., ge=0, le=100, description="进度百分比")
     current_step: Optional[str] = None
     error_message: Optional[str] = None
@@ -59,6 +63,7 @@ class TaskDetail(TaskResponse):
     input_video_path: Optional[str] = None
     extracted_audio_path: Optional[str] = None
     output_video_path: Optional[str] = None
+    subtitle_file_path: Optional[str] = Field(None, description="字幕文件 OSS 路径")
     celery_task_id: Optional[str] = None
     segments: list[SegmentResponse] = Field(default_factory=list, description="分段列表")
 

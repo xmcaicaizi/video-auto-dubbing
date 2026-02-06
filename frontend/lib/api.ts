@@ -50,12 +50,15 @@ export type TaskStatus =
   | 'completed'
   | 'failed';
 
+export type SubtitleMode = 'none' | 'external' | 'burn';
+
 export interface Task {
   id: string;
   title: string | null;
   source_language: string;
   target_language: string;
   status: TaskStatus;
+  subtitle_mode: SubtitleMode;
   progress: number;
   current_step: string | null;
   error_message: string | null;
@@ -87,6 +90,7 @@ export interface TaskDetail extends Task {
   input_video_path: string | null;
   extracted_audio_path: string | null;
   output_video_path: string | null;
+  subtitle_file_path: string | null;
   celery_task_id: string | null;
   segments: Segment[];
 }
@@ -101,6 +105,7 @@ export interface TaskListResponse {
 
 export interface DownloadUrlResponse {
   download_url: string;
+  subtitle_url?: string;
   expires_in: number;
 }
 
@@ -141,12 +146,14 @@ export async function createTask(
   video: File,
   sourceLanguage: string,
   targetLanguage: string,
-  title?: string
+  title?: string,
+  subtitleMode: SubtitleMode = 'external'
 ): Promise<Task> {
   const formData = new FormData();
   formData.append('video', video);
   formData.append('source_language', sourceLanguage);
   formData.append('target_language', targetLanguage);
+  formData.append('subtitle_mode', subtitleMode);
   if (title) {
     formData.append('title', title);
   }

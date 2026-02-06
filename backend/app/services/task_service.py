@@ -10,7 +10,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import Task, TaskStatus, Segment
+from app.models import Task, TaskStatus, SubtitleMode, Segment
 from app.schemas import TaskCreate, TaskUpdate
 
 
@@ -34,6 +34,7 @@ class TaskService:
             title=task_data.title,
             source_language=task_data.source_language,
             target_language=task_data.target_language,
+            subtitle_mode=getattr(task_data, 'subtitle_mode', SubtitleMode.EXTERNAL),
             status=TaskStatus.PENDING,
             progress=0,
         )

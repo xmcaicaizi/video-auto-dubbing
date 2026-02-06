@@ -24,12 +24,15 @@ export interface Segment {
   voice_id: string | null;
 }
 
+export type SubtitleMode = 'none' | 'external' | 'burn';
+
 export interface Task {
   id: string;
   title: string;
   source_language: string;
   target_language: string;
   status: TaskStatus;
+  subtitle_mode: SubtitleMode;
 
   // 进度相关
   current_step: string | null;
@@ -40,6 +43,7 @@ export interface Task {
   input_video_path: string | null;
   extracted_audio_path: string | null;
   output_video_path: string | null;
+  subtitle_file_path: string | null;
 
   // 元数据
   video_duration_ms: number | null;
@@ -57,6 +61,7 @@ export interface TaskCreatePayload {
   source_language: string;
   target_language: string;
   title?: string;
+  subtitle_mode?: SubtitleMode;
 }
 
 export interface TaskListResponse {
@@ -69,5 +74,6 @@ export interface TaskListResponse {
 
 export interface TaskResultResponse {
   download_url: string;
+  subtitle_url?: string;
   expires_in: number;
 }

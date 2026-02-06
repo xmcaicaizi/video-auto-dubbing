@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import uuid4
 
-from sqlalchemy import String, Integer, Text, DateTime, Enum
+from sqlalchemy import String, Integer, Text, DateTime, Enum, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -25,6 +25,14 @@ class TaskStatus(str, enum.Enum):
     MUXING = "muxing"  # 视频合成中
     COMPLETED = "completed"  # 已完成
     FAILED = "failed"  # 失败
+
+
+class SubtitleMode(str, enum.Enum):
+    """字幕模式"""
+
+    NONE = "none"              # 不生成字幕
+    EXTERNAL = "external"      # 外挂字幕文件（默认）
+    BURN = "burn"              # 烧录到视频中
 
 
 class Task(Base):
@@ -50,10 +58,17 @@ class Task(Base):
     progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 0-100
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # 字幕配置
+    subtitle_mode: Mapped[SubtitleMode] = mapped_column(
+        Enum(SubtitleMode), nullable=False, default=SubtitleMode.EXTERNAL
+    )
+    burn_subtitles: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     # 文件路径 (OSS 相对路径)
     input_video_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     extracted_audio_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     output_video_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    subtitle_file_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
     # 元数据
     video_duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

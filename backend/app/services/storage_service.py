@@ -99,6 +99,26 @@ class StorageService:
 
         return oss_path
 
+    def upload_subtitle_file(
+        self, task_id: UUID, subtitle_file: str
+    ) -> str:
+        """
+        上传字幕文件
+
+        Args:
+            task_id: 任务 ID
+            subtitle_file: 本地字幕文件路径
+
+        Returns:
+            OSS 相对路径
+        """
+        oss_path = self.build_task_path(task_id, "subtitle.ass")
+        self.oss.upload_file(subtitle_file, oss_path, content_type="text/x-ssa")
+
+        logger.info(f"Uploaded subtitle file: task_id={task_id}, path={oss_path}")
+
+        return oss_path
+
     def upload_output_video(
         self, task_id: UUID, video_file: str
     ) -> str:

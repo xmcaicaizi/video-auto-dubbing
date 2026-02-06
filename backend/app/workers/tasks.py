@@ -16,7 +16,7 @@ from app.config import settings
 from app.database import get_db_context
 from app.integrations.dashscope import ASRClient, LLMClient, TTSClient
 from app.integrations.oss import OSSClient
-from app.models import TaskStatus
+from app.models import TaskStatus, SubtitleMode
 from app.services import TaskService, StorageService
 from app.utils.ffmpeg import FFmpegHelper
 from .celery_app import celery_app
@@ -617,14 +617,64 @@ def mux_video_task(self, previous_result, task_id: str):
                     total_duration_ms=task.video_duration_ms,
                 )
 
-                # 替换视频音轨
-                output_video = ffmpeg.replace_audio(
-                    video_path=local_video,
-                    audio_path=merged_audio,
-                    output_path=f"{temp_dir}/output.mp4",
-                )
+                # ========== 字幕生成 ==========
+                subtitle_mode = task.subtitle_mode or SubtitleMode.EXTERNAL
+                subtitle_path = None
 
-                logger.info(f"Video muxed: {output_video}")
+                if subtitle_mode != SubtitleMode.NONE:
+                    # 准备分段数据
+                    sorted_segments = sorted(task.segments, key=lambda s: s.segment_index)
+                    subtitle_segments = [
+                        {
+                            "start_time_ms": seg.start_time_ms,
+                            "end_time_ms": seg.end_time_ms,
+                            "original_text": seg.original_text or "",
+                            "translated_text": seg.translated_text or "",
+                        }
+                        for seg in sorted_segments
+                        if seg.original_text or seg.translated_text
+                    ]
+
+                    if subtitle_segments:
+                        # 获取视频分辨率用于字幕布局
+                        video_width, video_height = ffmpeg.get_video_resolution(local_video)
+
+                        # 生成 ASS 字幕文件
+                        local_subtitle = ffmpeg.generate_ass_subtitle(
+                            segments=subtitle_segments,
+                            output_path=f"{temp_dir}/subtitle.ass",
+                            subtitle_type="bilingual",
+                            video_width=video_width,
+                            video_height=video_height,
+                        )
+                        subtitle_path = local_subtitle
+
+                        # 上传字幕文件到 OSS（无论是否烧录都上传，用于下载）
+                        oss_subtitle_path = storage_service.upload_subtitle_file(
+                            UUID(task_id), local_subtitle
+                        )
+                        task.subtitle_file_path = oss_subtitle_path
+
+                        logger.info(f"Subtitle file uploaded: {oss_subtitle_path}")
+
+                # ========== 视频合成 ==========
+                if subtitle_mode == SubtitleMode.BURN and subtitle_path:
+                    # 烧录模式：替换音轨 + 烧录字幕（单次 FFmpeg 调用）
+                    output_video = ffmpeg.replace_audio_and_burn_subtitles(
+                        video_path=local_video,
+                        audio_path=merged_audio,
+                        subtitle_path=subtitle_path,
+                        output_path=f"{temp_dir}/output.mp4",
+                    )
+                    logger.info(f"Video muxed with burned subtitles: {output_video}")
+                else:
+                    # 外挂模式 / 无字幕：仅替换音轨（视频流 copy，速度快）
+                    output_video = ffmpeg.replace_audio(
+                        video_path=local_video,
+                        audio_path=merged_audio,
+                        output_path=f"{temp_dir}/output.mp4",
+                    )
+                    logger.info(f"Video muxed: {output_video}")
 
                 # 上传最终视频
                 video_path = storage_service.upload_output_video(

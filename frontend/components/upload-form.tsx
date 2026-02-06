@@ -35,6 +35,7 @@ export default function UploadForm() {
     defaultValues: {
       source_language: 'zh',
       target_language: 'en',
+      subtitle_mode: 'external',
     },
   });
 
@@ -178,7 +179,25 @@ export default function UploadForm() {
         </div>
       </div>
 
-      {/* 3. 任务标题（可选） */}
+      {/* 3. 字幕模式 */}
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-slate-700">
+          字幕模式
+        </label>
+        <select
+          {...register('subtitle_mode')}
+          className="w-full rounded-md border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm py-2.5"
+        >
+          <option value="external">外挂字幕（生成 .ass 文件，可单独下载）</option>
+          <option value="burn">烧录字幕（嵌入视频画面，不可关闭）</option>
+          <option value="none">不生成字幕</option>
+        </select>
+        <p className="text-xs text-slate-400">
+          外挂字幕可在播放器中开关，烧录字幕会永久嵌入视频（处理较慢）
+        </p>
+      </div>
+
+      {/* 4. 任务标题（可选） */}
       <div className="space-y-2">
         <label className="block text-sm font-medium text-slate-700">
           任务标题 (可选)

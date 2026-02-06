@@ -1,8 +1,9 @@
 """
 FFmpeg 工具类
-视频/音频处理
+视频/音频处理 + 字幕生成
 """
 
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -510,3 +511,276 @@ class FFmpegHelper:
         except subprocess.CalledProcessError as e:
             logger.error(f"FFmpeg extract failed: {e.stderr.decode()}")
             raise RuntimeError(f"Segment extraction failed: {e.stderr.decode()}")
+
+    # ==================== 字幕相关 ====================
+
+    @staticmethod
+    def _ms_to_ass_time(ms: int) -> str:
+        """
+        毫秒转 ASS 时间格式 H:MM:SS.cc（百分之一秒）
+
+        Args:
+            ms: 毫秒数
+
+        Returns:
+            ASS 时间字符串，如 "0:01:23.45"
+        """
+        total_seconds = ms / 1000
+        hours = int(total_seconds // 3600)
+        minutes = int((total_seconds % 3600) // 60)
+        seconds = int(total_seconds % 60)
+        centiseconds = int((total_seconds % 1) * 100)
+        return f"{hours}:{minutes:02d}:{seconds:02d}.{centiseconds:02d}"
+
+    @staticmethod
+    def _escape_ass_text(text: str) -> str:
+        """
+        转义 ASS 字幕中的特殊字符
+
+        Args:
+            text: 原始文本
+
+        Returns:
+            转义后的文本
+        """
+        # ASS 中换行用 \N 表示，反斜杠本身不需要额外转义
+        text = text.replace("\n", "\\N")
+        # 花括号在 ASS 中是样式标签，需要转义
+        # 但实际使用中极少遇到，这里做基本处理
+        return text
+
+    def generate_ass_subtitle(
+        self,
+        segments: list[dict],
+        output_path: str,
+        subtitle_type: str = "bilingual",
+        video_width: int = 1920,
+        video_height: int = 1080,
+        font_name: str = "Arial",
+        primary_font_size: int = 20,
+        secondary_font_size: int = 16,
+    ) -> str:
+        """
+        从分段数据生成 ASS 字幕文件
+
+        Args:
+            segments: 分段列表，每个元素包含:
+                - start_time_ms: 开始时间（毫秒）
+                - end_time_ms: 结束时间（毫秒）
+                - original_text: 原文文本（可选）
+                - translated_text: 翻译文本（可选）
+            output_path: 输出 ASS 文件路径
+            subtitle_type: 字幕类型
+                - "bilingual": 双语字幕（译文主行 + 原文副行）
+                - "translated": 仅译文
+                - "original": 仅原文
+            video_width: 视频宽度（用于布局计算）
+            video_height: 视频高度（用于布局计算）
+            font_name: 字体名称
+            primary_font_size: 主字幕字号
+            secondary_font_size: 副字幕字号（双语模式下的原文）
+
+        Returns:
+            输出文件路径
+        """
+        logger.info(
+            f"Generating ASS subtitle: {len(segments)} segments, "
+            f"type={subtitle_type}, resolution={video_width}x{video_height}"
+        )
+
+        # ASS 文件头
+        ass_header = f"""[Script Info]
+Title: Auto Dubbing Subtitle
+ScriptType: v4.00+
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+YCbCr Matrix: TV.709
+PlayResX: {video_width}
+PlayResY: {video_height}
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Translated,{font_name},{primary_font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,1,2,20,20,25,1
+Style: Original,{font_name},{secondary_font_size},&H0000FFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,1.5,1,2,20,20,60,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+        # 生成事件行
+        events = []
+        for seg in segments:
+            start = self._ms_to_ass_time(seg["start_time_ms"])
+            end = self._ms_to_ass_time(seg["end_time_ms"])
+            original = seg.get("original_text", "")
+            translated = seg.get("translated_text", "")
+
+            if subtitle_type == "bilingual":
+                # 双语：译文在下方主行，原文在上方副行
+                if translated:
+                    events.append(
+                        f"Dialogue: 0,{start},{end},Translated,,0,0,0,,"
+                        f"{self._escape_ass_text(translated)}"
+                    )
+                if original:
+                    events.append(
+                        f"Dialogue: 1,{start},{end},Original,,0,0,0,,"
+                        f"{self._escape_ass_text(original)}"
+                    )
+            elif subtitle_type == "translated":
+                if translated:
+                    events.append(
+                        f"Dialogue: 0,{start},{end},Translated,,0,0,0,,"
+                        f"{self._escape_ass_text(translated)}"
+                    )
+            elif subtitle_type == "original":
+                if original:
+                    events.append(
+                        f"Dialogue: 0,{start},{end},Translated,,0,0,0,,"
+                        f"{self._escape_ass_text(original)}"
+                    )
+
+        # 写入文件
+        with open(output_path, "w", encoding="utf-8-sig") as f:
+            f.write(ass_header)
+            f.write("\n".join(events))
+            f.write("\n")
+
+        logger.info(f"ASS subtitle generated: {output_path} ({len(events)} events)")
+        return output_path
+
+    def get_video_resolution(self, video_path: str) -> tuple[int, int]:
+        """
+        获取视频分辨率
+
+        Args:
+            video_path: 视频文件路径
+
+        Returns:
+            (width, height) 元组
+        """
+        cmd = [
+            "ffprobe", "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=width,height",
+            "-of", "csv=s=x:p=0",
+            video_path,
+        ]
+        try:
+            result = subprocess.run(
+                cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            output = result.stdout.decode().strip()
+            width, height = output.split("x")
+            return int(width), int(height)
+        except Exception as e:
+            logger.warning(f"Failed to get video resolution: {e}, using default 1920x1080")
+            return 1920, 1080
+
+    def burn_subtitles(
+        self,
+        video_path: str,
+        subtitle_path: str,
+        output_path: Optional[str] = None,
+    ) -> str:
+        """
+        将字幕烧录到视频中
+
+        Args:
+            video_path: 输入视频路径
+            subtitle_path: ASS 字幕文件路径
+            output_path: 输出视频路径（可选）
+
+        Returns:
+            输出视频文件路径
+
+        Raises:
+            RuntimeError: FFmpeg 执行失败
+        """
+        if not output_path:
+            output_path = str(
+                Path(video_path).parent / f"{Path(video_path).stem}_subtitled.mp4"
+            )
+
+        logger.info(f"Burning subtitles: video={video_path}, subtitle={subtitle_path}")
+
+        # ASS 路径中的特殊字符需要转义（FFmpeg 滤镜语法）
+        escaped_subtitle = subtitle_path.replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", video_path,
+            "-vf", f"ass={escaped_subtitle}",
+            "-c:v", "libx264",       # 需要重编码视频流
+            "-preset", "medium",      # 编码速度/质量平衡
+            "-crf", "23",             # 画质（越低越好，23 是默认值）
+            "-c:a", "copy",           # 音频直接复制
+            output_path,
+        ]
+
+        try:
+            subprocess.run(
+                cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            logger.info(f"Subtitles burned: {output_path}")
+            return output_path
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Subtitle burn failed: {e.stderr.decode()}")
+            raise RuntimeError(f"Subtitle burn failed: {e.stderr.decode()}")
+
+    def replace_audio_and_burn_subtitles(
+        self,
+        video_path: str,
+        audio_path: str,
+        subtitle_path: str,
+        output_path: Optional[str] = None,
+    ) -> str:
+        """
+        同时替换音轨并烧录字幕（单次 FFmpeg 调用，避免重复编码）
+
+        Args:
+            video_path: 原视频文件路径
+            audio_path: 新音频文件路径
+            subtitle_path: ASS 字幕文件路径
+            output_path: 输出视频路径
+
+        Returns:
+            输出视频文件路径
+        """
+        if not output_path:
+            output_path = str(
+                Path(video_path).parent / f"{Path(video_path).stem}_dubbed_sub.mp4"
+            )
+
+        logger.info(
+            f"Replacing audio + burning subtitles: "
+            f"video={video_path}, audio={audio_path}, subtitle={subtitle_path}"
+        )
+
+        escaped_subtitle = subtitle_path.replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", video_path,
+            "-i", audio_path,
+            "-vf", f"ass={escaped_subtitle}",
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-crf", "23",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            "-shortest",
+            output_path,
+        ]
+
+        try:
+            subprocess.run(
+                cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            logger.info(f"Audio replaced + subtitles burned: {output_path}")
+            return output_path
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Replace audio + burn subtitles failed: {e.stderr.decode()}")
+            raise RuntimeError(f"Replace audio + burn subtitles failed: {e.stderr.decode()}")

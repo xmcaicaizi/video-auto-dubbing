@@ -549,6 +549,28 @@ class FFmpegHelper:
         # 但实际使用中极少遇到，这里做基本处理
         return text
 
+    @staticmethod
+    def _escape_filter_path(path: str) -> str:
+        """
+        转义 FFmpeg 滤镜中的文件路径
+
+        FFmpeg 滤镜语法需要转义以下字符: \\ : ' [ ]
+        参考: https://ffmpeg.org/ffmpeg-filters.html#Filtering-Introduction
+
+        Args:
+            path: 原始文件路径
+
+        Returns:
+            转义后的路径（用于滤镜参数）
+        """
+        # 统一使用正斜杠
+        path = path.replace("\\", "/")
+        # 转义单引号（因为我们用单引号包裹路径）
+        path = path.replace("'", "'\\''")
+        # 转义冒号（Windows 驱动器号或 FFmpeg 特殊语法）
+        path = path.replace(":", "\\:")
+        return path
+
     def generate_ass_subtitle(
         self,
         segments: list[dict],
@@ -704,13 +726,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         logger.info(f"Burning subtitles: video={video_path}, subtitle={subtitle_path}")
 
-        # ASS 路径中的特殊字符需要转义（FFmpeg 滤镜语法）
-        escaped_subtitle = subtitle_path.replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
+        # FFmpeg 滤镜路径转义：需要转义 \ : ' [ ] 等特殊字符
+        # 参考: https://ffmpeg.org/ffmpeg-filters.html#Filtering-Introduction
+        escaped_subtitle = self._escape_filter_path(subtitle_path)
 
         cmd = [
             "ffmpeg", "-y",
             "-i", video_path,
-            "-vf", f"ass={escaped_subtitle}",
+            "-vf", f"ass='{escaped_subtitle}'",
             "-c:v", "libx264",       # 需要重编码视频流
             "-preset", "medium",      # 编码速度/质量平衡
             "-crf", "23",             # 画质（越低越好，23 是默认值）
@@ -757,13 +780,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             f"video={video_path}, audio={audio_path}, subtitle={subtitle_path}"
         )
 
-        escaped_subtitle = subtitle_path.replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
+        escaped_subtitle = self._escape_filter_path(subtitle_path)
 
         cmd = [
             "ffmpeg", "-y",
             "-i", video_path,
             "-i", audio_path,
-            "-vf", f"ass={escaped_subtitle}",
+            "-vf", f"ass='{escaped_subtitle}'",
             "-c:v", "libx264",
             "-preset", "medium",
             "-crf", "23",

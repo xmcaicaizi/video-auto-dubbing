@@ -50,7 +50,9 @@ export type TaskStatus =
   | 'completed'
   | 'failed';
 
+// 后端返回大写，前端发送小写（后端会转换）
 export type SubtitleMode = 'none' | 'external' | 'burn';
+export type SubtitleModeResponse = 'NONE' | 'EXTERNAL' | 'BURN';
 
 export interface Task {
   id: string;
@@ -58,7 +60,7 @@ export interface Task {
   source_language: string;
   target_language: string;
   status: TaskStatus;
-  subtitle_mode: SubtitleMode;
+  subtitle_mode: SubtitleModeResponse;
   progress: number;
   current_step: string | null;
   error_message: string | null;

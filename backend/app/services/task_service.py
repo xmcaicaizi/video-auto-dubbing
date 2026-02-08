@@ -34,7 +34,7 @@ class TaskService:
             title=task_data.title,
             source_language=task_data.source_language,
             target_language=task_data.target_language,
-            subtitle_mode=getattr(task_data, 'subtitle_mode', SubtitleMode.EXTERNAL),
+            subtitle_mode=getattr(task_data, 'subtitle_mode', SubtitleMode.BURN),
             status=TaskStatus.PENDING,
             progress=0,
         )

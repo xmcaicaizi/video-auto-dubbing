@@ -28,7 +28,7 @@ async def create_task(
     source_language: str = Form(..., description="源语言代码，如 zh, en"),
     target_language: str = Form(..., description="目标语言代码"),
     title: Optional[str] = Form(None, description="任务标题"),
-    subtitle_mode: str = Form("external", description="字幕模式: none/external/burn"),
+    subtitle_mode: str = Form("burn", description="字幕模式: none/external/burn"),
     task_service: TaskService = Depends(get_task_service),
     storage_service: StorageService = Depends(get_storage_service),
 ):
@@ -39,10 +39,10 @@ async def create_task(
     - **source_language**: 源语言代码（必需）
     - **target_language**: 目标语言代码（必需）
     - **title**: 任务标题（可选）
-    - **subtitle_mode**: 字幕模式（可选，默认 external）
+    - **subtitle_mode**: 字幕模式（可选，默认 burn）
+        - burn: 将字幕烧录到视频中（推荐，默认）
+        - external: 生成外挂字幕文件
         - none: 不生成字幕
-        - external: 生成外挂字幕文件（默认）
-        - burn: 将字幕烧录到视频中
     """
     # 验证文件
     if not video.filename:

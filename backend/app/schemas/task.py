@@ -24,8 +24,8 @@ class TaskCreate(TaskBase):
     """创建任务请求"""
 
     subtitle_mode: SubtitleMode = Field(
-        default=SubtitleMode.EXTERNAL,
-        description="字幕模式: none=不生成, external=外挂字幕文件(默认), burn=烧录到视频"
+        default=SubtitleMode.BURN,
+        description="字幕模式: burn=烧录到视频(推荐,默认), external=外挂字幕文件, none=不生成"
     )
 
 
@@ -46,7 +46,7 @@ class TaskResponse(TaskBase):
 
     id: UUID
     status: TaskStatus
-    subtitle_mode: SubtitleMode = Field(default=SubtitleMode.EXTERNAL, description="字幕模式")
+    subtitle_mode: SubtitleMode = Field(default=SubtitleMode.BURN, description="字幕模式")
     progress: int = Field(..., ge=0, le=100, description="进度百分比")
     current_step: Optional[str] = None
     error_message: Optional[str] = None

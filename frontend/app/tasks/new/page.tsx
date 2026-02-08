@@ -20,7 +20,7 @@ export default function NewTaskPage() {
   const [title, setTitle] = useState('');
   const [sourceLanguage, setSourceLanguage] = useState('zh');
   const [targetLanguage, setTargetLanguage] = useState('en');
-  const [subtitleMode, setSubtitleMode] = useState<SubtitleMode>('external');
+  const [subtitleMode, setSubtitleMode] = useState<SubtitleMode>('burn');
 
   // UI 状态
   const [uploading, setUploading] = useState(false);
@@ -303,16 +303,16 @@ export default function NewTaskPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="external">
-                    <div className="flex flex-col">
-                      <span>外挂字幕（推荐）</span>
-                      <span className="text-xs text-muted-foreground">生成独立 .ass 字幕文件，可单独下载</span>
-                    </div>
-                  </SelectItem>
                   <SelectItem value="burn">
                     <div className="flex flex-col">
-                      <span>烧录字幕</span>
-                      <span className="text-xs text-muted-foreground">将字幕嵌入视频画面，无法关闭</span>
+                      <span>烧录字幕（推荐）</span>
+                      <span className="text-xs text-muted-foreground">将字幕嵌入视频画面，无需单独加载</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="external">
+                    <div className="flex flex-col">
+                      <span>外挂字幕</span>
+                      <span className="text-xs text-muted-foreground">生成独立 .ass 字幕文件，可单独下载</span>
                     </div>
                   </SelectItem>
                   <SelectItem value="none">

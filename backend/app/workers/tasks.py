@@ -618,7 +618,7 @@ def mux_video_task(self, previous_result, task_id: str):
                 )
 
                 # ========== 字幕生成 ==========
-                subtitle_mode = task.subtitle_mode or SubtitleMode.EXTERNAL
+                subtitle_mode = task.subtitle_mode or SubtitleMode.BURN
                 subtitle_path = None
 
                 if subtitle_mode != SubtitleMode.NONE:

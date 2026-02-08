@@ -31,7 +31,7 @@ class SubtitleMode(str, enum.Enum):
     """字幕模式"""
 
     NONE = "NONE"              # 不生成字幕
-    EXTERNAL = "EXTERNAL"      # 外挂字幕文件（默认）
+    EXTERNAL = "EXTERNAL"      # 外挂字幕文件
     BURN = "BURN"              # 烧录到视频中
 
 
@@ -60,7 +60,7 @@ class Task(Base):
 
     # 字幕配置
     subtitle_mode: Mapped[SubtitleMode] = mapped_column(
-        Enum(SubtitleMode), nullable=False, default=SubtitleMode.EXTERNAL
+        Enum(SubtitleMode), nullable=False, default=SubtitleMode.BURN
     )
     burn_subtitles: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 

@@ -40,6 +40,12 @@ celery_app.autodiscover_tasks(["workers"])
 
 # 任务路由配置
 celery_app.conf.task_routes = {
+    "process_video_pipeline": {"queue": "default"},
+    "extract_audio": {"queue": "media"},
+    "transcribe_audio": {"queue": "ai"},
+    "translate_segments": {"queue": "ai"},
+    "synthesize_audio": {"queue": "ai"},
+    "mux_video": {"queue": "media"},
     "workers.tasks.*": {"queue": "default"},
     "workers.steps.extract_audio.*": {"queue": "media"},
     "workers.steps.asr.*": {"queue": "ai"},

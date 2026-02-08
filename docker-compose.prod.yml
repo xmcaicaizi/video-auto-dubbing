@@ -9,8 +9,6 @@ services:
       POSTGRES_DB: ${DB_NAME:-dubbing}
       POSTGRES_USER: ${DB_USER:-dubbing}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-dubbing123}
-    ports:
-      - "${DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -22,13 +20,11 @@ services:
       - dubbing-network
     restart: unless-stopped
 
-  # Redis (Celery Broker + Cache)
+  # Redis (Celery Broker + Cache) - 无密码
   redis:
     image: redis:7-alpine
     container_name: video-dubbing-redis
     command: redis-server --appendonly yes
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -54,7 +50,7 @@ services:
       DB_USER: ${DB_USER:-dubbing}
       DB_PASSWORD: ${DB_PASSWORD:-dubbing123}
 
-      # Redis 配置
+      # Redis 配置（无密码）
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_DB: 0
@@ -65,15 +61,21 @@ services:
       OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID}
       OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET}
       OSS_PUBLIC_DOMAIN: ${OSS_PUBLIC_DOMAIN}
-      OSS_PREFIX: ${OSS_PREFIX:-videos/}
+      OSS_PREFIX: ${OSS_PREFIX:-video-auto-dubbing}
+      OSS_USE_SSL: ${OSS_USE_SSL:-true}
 
       # 阿里百炼 DashScope
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
 
+      # ASR/LLM/TTS 配置
+      ASR_MODEL: ${ASR_MODEL:-fun-asr}
+      LLM_MODEL: ${LLM_MODEL:-qwen-turbo}
+      TTS_MODEL: ${TTS_MODEL:-qwen3-tts-vc-realtime-2026-01-15}
+
       # 应用配置
       DEBUG: ${DEBUG:-false}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
 
     ports:
       - "${API_PORT:-8000}:8000"
@@ -83,12 +85,11 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./backend:/app
       - api_logs:/app/logs
     networks:
       - dubbing-network
     restart: unless-stopped
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
 
   # Celery Worker
   worker:
@@ -104,7 +105,7 @@ services:
       DB_USER: ${DB_USER:-dubbing}
       DB_PASSWORD: ${DB_PASSWORD:-dubbing123}
 
-      # Redis 配置
+      # Redis 配置（无密码）
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_DB: 0
@@ -115,10 +116,16 @@ services:
       OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID}
       OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET}
       OSS_PUBLIC_DOMAIN: ${OSS_PUBLIC_DOMAIN}
-      OSS_PREFIX: ${OSS_PREFIX:-videos/}
+      OSS_PREFIX: ${OSS_PREFIX:-video-auto-dubbing}
+      OSS_USE_SSL: ${OSS_USE_SSL:-true}
 
       # 阿里百炼 DashScope
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
+
+      # ASR/LLM/TTS 配置
+      ASR_MODEL: ${ASR_MODEL:-fun-asr}
+      LLM_MODEL: ${LLM_MODEL:-qwen-turbo}
+      TTS_MODEL: ${TTS_MODEL:-qwen3-tts-vc-realtime-2026-01-15}
 
       # Worker 配置
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
@@ -131,11 +138,15 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./backend:/app
       - worker_logs:/app/logs
     networks:
       - dubbing-network
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
     command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=${WORKER_CONCURRENCY:-4} --queues=default,media,ai,celery
 
   # Next.js 前端
@@ -143,35 +154,15 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: runner
     container_name: video-dubbing-frontend
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      NODE_ENV: production
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     depends_on:
       - api
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
-    networks:
-      - dubbing-network
-    restart: unless-stopped
-    command: npm run dev
-
-  # NGINX 网关
-  gateway:
-    image: nginx:alpine
-    container_name: video-dubbing-gateway
-    ports:
-      - "${GATEWAY_HTTP_PORT:-80}:80"
-      - "${GATEWAY_HTTPS_PORT:-443}:443"
-    volumes:
-      - ./gateway/nginx.v2.conf:/etc/nginx/nginx.conf:ro
-      - ./gateway/ssl:/etc/nginx/ssl:ro
-    depends_on:
-      - api
-      - frontend
     networks:
       - dubbing-network
     restart: unless-stopped

@@ -14,10 +14,7 @@ class Settings(BaseSettings):
     """应用配置"""
 
     model_config = SettingsConfigDict(
-        env_file=[
-            "/Users/micago/Desktop/index/video-auto-dubbing/.env",  # 绝对路径（生产）
-            ".env",  # 相对路径（开发）
-        ],
+        env_file=".env",  # 相对路径，适用于本地和 Docker
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",

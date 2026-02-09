@@ -17,7 +17,7 @@ from app.database import get_db_context
 from app.integrations.dashscope import ASRClient, LLMClient, TTSClient
 from app.integrations.oss import OSSClient
 from app.models import TaskStatus, SubtitleMode
-from app.services import TaskService, StorageService
+from app.services import TaskService, StorageService, TranslationChunker
 from app.utils.ffmpeg import FFmpegHelper
 from .celery_app import celery_app
 
@@ -280,74 +280,111 @@ def translate_segments_task(self, previous_result, task_id: str):
                     raise ValueError(f"Task {task_id} not found")
 
                 segments = task.segments
-                logger.info(f"Translating {len(segments)} segments (full context mode)")
+                logger.info(f"Translating {len(segments)} segments using chunked translation")
 
                 # 翻译客户端
                 llm_client = LLMClient()
 
-                # 构建全文（带分段标记）
-                full_text_lines = []
-                for i, seg in enumerate(segments):
-                    if seg.original_text:
-                        full_text_lines.append(f"[{i}] {seg.original_text}")
-
-                full_text = "\n".join(full_text_lines)
-
-                logger.info(f"Full text to translate ({len(full_text)} chars):\n{full_text[:200]}...")
-
                 try:
-                    # 全文翻译（保留上下文）
-                    translated_full = llm_client.translate(
-                        text=full_text,
-                        source_lang=task.source_language,
-                        target_lang=task.target_language,
+                    # ========== 分块翻译（使用 TranslationChunker） ==========
+                    logger.info("Starting chunked translation with overlap context")
+
+                    # Step 1: 智能分块
+                    chunks = TranslationChunker.chunk_segments(segments)
+                    logger.info(
+                        f"Segmentation complete: {len(segments)} segments -> {len(chunks)} chunks, "
+                        f"max_chars={TranslationChunker.MAX_CHARS_PER_CHUNK}, "
+                        f"overlap={TranslationChunker.OVERLAP_SEGMENTS}"
                     )
 
-                    logger.info(f"Full translation result:\n{translated_full[:200]}...")
+                    # 存储所有翻译结果（使用 segment_index 作为 key）
+                    all_translations = {}
 
-                    # 解析翻译结果，匹配回分段
-                    translated_lines = translated_full.split("\n")
-                    translation_map = {}
+                    # Step 2: 逐块翻译
+                    for chunk_idx, chunk in enumerate(chunks, start=1):
+                        chunk_size = len(chunk)
+                        chunk_indices = [seg.segment_index for seg in chunk]
 
-                    for line in translated_lines:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        # 匹配 [数字] 前缀
-                        import re
-                        match = re.match(r'\[(\d+)\]\s*(.+)', line)
-                        if match:
-                            idx = int(match.group(1))
-                            text = match.group(2).strip()
-                            translation_map[idx] = text
-                        else:
-                            # 无标记的翻译文本，尝试按行号匹配
-                            if len(translation_map) < len(segments):
-                                translation_map[len(translation_map)] = line
+                        logger.info(
+                            f"Processing chunk {chunk_idx}/{len(chunks)}: "
+                            f"{chunk_size} segments, indices={chunk_indices}"
+                        )
 
-                    # 更新各分段翻译
-                    for i, segment in enumerate(segments):
+                        # 构建输入文本（带 segment_index 标记）
+                        chunk_text = TranslationChunker.build_chunk_text(chunk)
+
+                        logger.debug(
+                            f"Chunk {chunk_idx} input ({len(chunk_text)} chars): "
+                            f"{chunk_text[:100]}..."
+                        )
+
+                        # 调用 LLM 翻译
+                        translated_chunk = llm_client.translate(
+                            text=chunk_text,
+                            source_lang=task.source_language,
+                            target_lang=task.target_language,
+                        )
+
+                        logger.debug(
+                            f"Chunk {chunk_idx} output: {translated_chunk[:100]}..."
+                        )
+
+                        # 解析翻译结果
+                        chunk_translations = TranslationChunker.parse_translation_result(
+                            translated_chunk
+                        )
+
+                        logger.info(
+                            f"Chunk {chunk_idx} parsed: {len(chunk_translations)} translations"
+                        )
+
+                        # 合并到总结果（处理重叠：使用 update 覆盖之前的版本）
+                        overlap_count = len(set(chunk_translations.keys()) & set(all_translations.keys()))
+                        if overlap_count > 0:
+                            logger.debug(
+                                f"Chunk {chunk_idx} has {overlap_count} overlapping segments, "
+                                "updating with newer translations"
+                            )
+
+                        all_translations.update(chunk_translations)
+
+                    # Step 3: 更新所有分段的翻译
+                    logger.info(f"Updating {len(all_translations)} segment translations in database")
+
+                    for segment in segments:
                         if not segment.original_text:
                             continue
 
-                        translated = translation_map.get(i, segment.original_text)
+                        # 使用 segment.segment_index（不是 enumerate 的 i）
+                        translated = all_translations.get(
+                            segment.segment_index,
+                            segment.original_text  # 降级：未翻译则保留原文
+                        )
 
                         await task_service.update_segment_translation(
                             segment.id, translated
                         )
 
                         logger.debug(
-                            f"Segment {i}: {segment.original_text[:30]} -> {translated[:30]}"
+                            f"Segment {segment.segment_index}: "
+                            f"{segment.original_text[:30]} -> {translated[:30]}"
                         )
 
-                    logger.info(f"Translation completed: {len(segments)} segments (full context)")
+                    logger.info(
+                        f"Chunked translation completed successfully: "
+                        f"{len(segments)} segments processed via {len(chunks)} chunks"
+                    )
 
                 except Exception as e:
-                    logger.error(f"Full translation failed: {e}, falling back to segment-by-segment")
+                    logger.error(
+                        f"Chunked translation failed: {e}, falling back to segment-by-segment translation"
+                    )
+
                     # 降级：逐段翻译
-                    for i, segment in enumerate(segments):
+                    for segment in segments:
                         if not segment.original_text:
                             continue
+
                         try:
                             translated = llm_client.translate(
                                 text=segment.original_text,
@@ -355,8 +392,16 @@ def translate_segments_task(self, previous_result, task_id: str):
                                 target_lang=task.target_language,
                             )
                             await task_service.update_segment_translation(segment.id, translated)
+
+                            logger.debug(
+                                f"Fallback: Segment {segment.segment_index} translated individually"
+                            )
+
                         except Exception as seg_err:
-                            logger.error(f"Segment {i} translation failed: {seg_err}")
+                            logger.error(
+                                f"Segment {segment.segment_index} translation failed: {seg_err}, "
+                                "using original text"
+                            )
                             await task_service.update_segment_translation(
                                 segment.id, segment.original_text
                             )

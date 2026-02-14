@@ -199,8 +199,8 @@ def transcribe_audio_task(self, previous_result, task_id: str):
 
                 logger.info(f"Downloaded audio for ASR: {local_audio}")
 
-                # 语音识别
-                asr_client = ASRClient()
+                # 语音识别（使用任务的源语言作为 language_hints）
+                asr_client = ASRClient(language_hints=[task.source_language])
                 audio_url = storage_service.get_download_url(
                     task.extracted_audio_path, expires=3600
                 )

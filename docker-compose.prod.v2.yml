@@ -1,0 +1,159 @@
+version: '3.8'
+
+services:
+  # PostgreSQL 数据库
+  db:
+    image: postgres:15-alpine
+    container_name: video-dubbing-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-dubbing}
+      POSTGRES_USER: ${POSTGRES_USER:-dubbing}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dubbing123}
+    volumes:
+      - dubbing_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dubbing}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - dubbing-network
+    restart: unless-stopped
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: video-dubbing-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - dubbing_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - dubbing-network
+    restart: unless-stopped
+
+  # FastAPI 后端
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: video-dubbing-api
+    environment:
+      # 数据库配置 (适配旧 .env 变量名)
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-dubbing}
+      DB_USER: ${POSTGRES_USER:-dubbing}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-dubbing123}
+
+      # Redis 配置
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+
+      # 阿里云 OSS
+      OSS_ENDPOINT: ${OSS_ENDPOINT}
+      OSS_BUCKET: ${OSS_BUCKET}
+      OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID}
+      OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET}
+      OSS_PREFIX: ${OSS_PREFIX:-video-auto-dubbing/}
+
+      # 阿里百炼 DashScope
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
+
+      # 应用配置
+      DEBUG: ${DEBUG:-false}
+      CORS_ORIGINS: '["https://dubbing.courseark.online","http://localhost:3000"]'
+
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - api_logs:/app/logs
+    networks:
+      - dubbing-network
+      - courseark-network
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+  # Celery Worker
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: video-dubbing-worker
+    environment:
+      # 同 api
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-dubbing}
+      DB_USER: ${POSTGRES_USER:-dubbing}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-dubbing123}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      OSS_ENDPOINT: ${OSS_ENDPOINT}
+      OSS_BUCKET: ${OSS_BUCKET}
+      OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID}
+      OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET}
+      OSS_PREFIX: ${OSS_PREFIX:-video-auto-dubbing/}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - worker_logs:/app/logs
+    networks:
+      - dubbing-network
+    restart: unless-stopped
+    command: python -m celery -A app.workers.celery_app worker --loglevel=info --concurrency=${WORKER_CONCURRENCY:-4}
+
+  # Next.js 前端
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: video-dubbing-frontend
+    environment:
+      # 前端在浏览器访问，API URL 需要是公网地址
+      NEXT_PUBLIC_API_URL: https://dubbing.courseark.online/api
+    depends_on:
+      - api
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    networks:
+      - dubbing-network
+      - courseark-network
+    restart: unless-stopped
+    command: npm start
+
+volumes:
+  dubbing_postgres_data:
+    driver: local
+  dubbing_redis_data:
+    driver: local
+  api_logs:
+    driver: local
+  worker_logs:
+    driver: local
+
+networks:
+  dubbing-network:
+    driver: bridge
+  courseark-network:
+    name: psychic-broccoli_courseark-network
+    external: true

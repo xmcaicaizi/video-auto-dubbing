@@ -1,4 +1,5 @@
 FROM python:3.11-slim
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 WORKDIR /app
 
@@ -8,12 +9,8 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# 安装 uv
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.cargo/bin:$PATH"
-
-# 复制依赖文件
-COPY pyproject.toml ./
+# 复制依赖文件和 README
+COPY pyproject.toml README.md ./
 
 # 安装 Python 依赖
 RUN uv pip install --system -e .

@@ -5,7 +5,7 @@
 import axios, { AxiosError } from 'axios';
 
 // API 基础配置
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
 
 // 创建 axios 实例
 export const apiClient = axios.create({

@@ -66,12 +66,23 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
     }
   };
 
+  // 下载文件通用方法（兼容移动端）
+  // 注意：download 属性对跨域 URL 无效，需后端配置 Content-Disposition 响应头
+  const triggerDownload = (url: string) => {
+    const link = document.createElement('a');
+    link.href = url;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // 下载结果
   const handleDownload = async () => {
     try {
       setDownloading(true);
       const { download_url } = await getDownloadUrl(params.id);
-      window.open(download_url, '_blank');
+      // 使用 a 标签触发下载，兼容移动端
+      triggerDownload(download_url);
     } catch (err: any) {
       alert(`获取下载链接失败：${err.message}`);
     } finally {
@@ -85,7 +96,8 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
       setDownloadingSubtitle(true);
       const { subtitle_url } = await getDownloadUrl(params.id);
       if (subtitle_url) {
-        window.open(subtitle_url, '_blank');
+        // 使用 a 标签触发下载，兼容移动端
+        triggerDownload(subtitle_url);
       } else {
         alert('该任务没有字幕文件');
       }

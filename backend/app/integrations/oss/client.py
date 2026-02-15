@@ -313,7 +313,11 @@ class OSSClient:
             raise
 
     def generate_presigned_url(
-        self, oss_path: str, expires: int = 3600, method: str = "GET"
+        self,
+        oss_path: str,
+        expires: int = 3600,
+        method: str = "GET",
+        filename: Optional[str] = None,
     ) -> str:
         """
         生成预签名 URL（临时访问链接）
@@ -322,6 +326,7 @@ class OSSClient:
             oss_path: OSS 中的文件路径（相对路径）
             expires: 过期时间（秒），默认 1 小时
             method: HTTP 方法，默认 'GET'
+            filename: 下载时显示的文件名（可选，设置后强制下载而非在浏览器中打开）
 
         Returns:
             预签名 URL
@@ -329,8 +334,17 @@ class OSSClient:
         key = self._build_key(oss_path)
 
         try:
-            url = self.bucket.sign_url(method, key, expires, slash_safe=True)
-            logger.info(f"Generated presigned URL: {key}, expires_in={expires}s")
+            # 如果指定了文件名，设置 Content-Disposition 响应头强制下载
+            headers = None
+            if filename:
+                headers = {
+                    "response-content-disposition": f'attachment; filename="{filename}"'
+                }
+
+            url = self.bucket.sign_url(
+                method, key, expires, slash_safe=True, headers=headers
+            )
+            logger.info(f"Generated presigned URL: {key}, expires_in={expires}s, filename={filename}")
             return url
         except oss2.exceptions.OssError as e:
             logger.error(f"Generate presigned URL failed: {e}")

@@ -228,14 +228,20 @@ async def get_task_result(
     if not task.output_video_path:
         raise HTTPException(status_code=404, detail="Output video not found")
 
-    # 生成下载链接（1 小时有效）
-    download_url = storage_service.get_download_url(task.output_video_path, expires=3600)
+    # 生成带文件名的下载链接（1 小时有效），确保浏览器下载而非预览
+    video_filename = f"dubbed_video_{task_id}.mp4"
+    download_url = storage_service.get_download_url(
+        task.output_video_path, expires=3600, filename=video_filename
+    )
 
     # 包含字幕下载链接（如果有）
     result = {"download_url": download_url, "expires_in": 3600}
 
     if task.subtitle_file_path:
-        subtitle_url = storage_service.get_download_url(task.subtitle_file_path, expires=3600)
+        subtitle_filename = f"subtitle_{task_id}.ass"
+        subtitle_url = storage_service.get_download_url(
+            task.subtitle_file_path, expires=3600, filename=subtitle_filename
+        )
         result["subtitle_url"] = subtitle_url
 
     return result
@@ -272,6 +278,10 @@ async def get_task_subtitle(
     if not task.subtitle_file_path:
         raise HTTPException(status_code=404, detail="No subtitle file for this task")
 
-    subtitle_url = storage_service.get_download_url(task.subtitle_file_path, expires=3600)
+    # 生成带文件名的下载链接，确保浏览器下载而非预览
+    subtitle_filename = f"subtitle_{task_id}.ass"
+    subtitle_url = storage_service.get_download_url(
+        task.subtitle_file_path, expires=3600, filename=subtitle_filename
+    )
 
     return {"subtitle_url": subtitle_url, "expires_in": 3600}

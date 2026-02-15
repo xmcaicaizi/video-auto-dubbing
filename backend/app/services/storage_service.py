@@ -162,18 +162,21 @@ class StorageService:
 
         return local_path
 
-    def get_download_url(self, oss_path: str, expires: int = 3600) -> str:
+    def get_download_url(
+        self, oss_path: str, expires: int = 3600, filename: Optional[str] = None
+    ) -> str:
         """
         生成下载链接
 
         Args:
             oss_path: OSS 路径
             expires: 过期时间（秒）
+            filename: 下载时显示的文件名（可选，设置后强制下载而非在浏览器中打开）
 
         Returns:
             下载 URL
         """
-        return self.oss.generate_presigned_url(oss_path, expires)
+        return self.oss.generate_presigned_url(oss_path, expires, filename=filename)
 
     def get_public_url(self, oss_path: str) -> str:
         """
